@@ -1,0 +1,75 @@
+// Esquema base multiempresa. Las tablas usan snake_case y los modelos
+// Prisma PascalCase/camelCase, mapeados con @@map/@map.
+//
+// La URL de conexión se configura en prisma.config.ts (Prisma 7 no la lee
+// del bloque datasource ni carga .env automáticamente).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EstadoEmpresa {
+  ACTIVA
+  SUSPENDIDA
+
+  @@map("estado_empresa")
+}
+
+enum EstadoUsuario {
+  ACTIVO
+  INACTIVO
+
+  @@map("estado_usuario")
+}
+
+model Plan {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre         String   @unique
+  importeMensual Decimal  @map("importe_mensual") @db.Decimal(12, 2)
+  activo         Boolean  @default(true)
+  creadoEn       DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn  DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  empresas Empresa[]
+
+  @@map("planes")
+}
+
+model Empresa {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre           String
+  nif              String        @unique
+  emailFacturacion String        @map("email_facturacion")
+  planId           String        @map("plan_id") @db.Uuid
+  estado           EstadoEmpresa @default(ACTIVA)
+  creadoEn         DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn    DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  plan     Plan      @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usuarios Usuario[]
+
+  @@index([planId])
+  @@map("empresas")
+}
+
+model Usuario {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId     String?       @map("empresa_id") @db.Uuid
+  email         String        @unique
+  nombre        String
+  estado        EstadoUsuario @default(ACTIVO)
+  esSuperadmin  Boolean       @default(false) @map("es_superadmin")
+  creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  empresa Empresa? @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([empresaId])
+  @@map("usuarios")
+}

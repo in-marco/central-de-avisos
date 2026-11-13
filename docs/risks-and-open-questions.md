@@ -10,7 +10,6 @@
 ## Implementation-Time Questions
 
 - Umbral de confianza de la IA y reglas de validación por campo para decidir cuándo se guarda o se revisa.
-- Estrategia de aislamiento: Row Level Security en PostgreSQL o filtros de aplicación con pruebas.
 - Comportamiento exacto de la numeración ante anulación y posibles huecos.
 - Momento de congelar la tarifa: al aprobar el parte o al emitir la factura.
 - Formato de serie y numeración por empresa y año.
@@ -48,7 +47,8 @@
 
 - **Riesgo legal/fiscal alto:** emitir facturas en nombre de terceros con certificado propio puede exigir contratos, autorizaciones o un modelo distinto. Validar antes de producción.
 - **Errores de extracción IA:** un JSON incorrecto puede acabar en una factura. Mitigación: aprobación obligatoria de oficina, umbral de confianza y auditoría.
-- **Fuga entre tenants:** un fallo de scoping expone datos de otra empresa. Mitigación: pruebas de autorización y defensa en profundidad.
+- **Fuga entre tenants:** un fallo de scoping expone datos de otra empresa. Mitigación actual: `empresa_id` obligatorio, filtros centralizados en `src/db/tenant.ts`, tests de aislamiento con dos empresas y revisión de código. RLS no está activa todavía.
+- **RLS diferida (riesgo residual):** una consulta nueva sin `tenantFilter` podría filtrar datos y PostgreSQL no la bloqueará. Mitigación: regla durable en `CONSTRAINTS.md`, revisión en cada feature y reevaluación de RLS antes de producción o al añadir la primera tabla operativa con consultas cruzadas.
 - **Compromiso del certificado:** permitiría firmar facturas falsas. Mitigación: HSM o gestor de secretos, permisos mínimos y auditoría.
 - **Alcance del MVP demasiado amplio:** portal, IA, firma y facturación mensual en un solo corte. Mitigación: demo interna y datos sembrados.
 - **Mala calidad de los manuscritos:** la precisión puede no alcanzar el 80 %. Mitigación: conjunto de prueba real y fallback manual.
@@ -62,4 +62,10 @@
 - Lectura de la especificación VERIFACTU y de las obligaciones del modo NO-VERIFACTU.
 - Prueba de precisión con 10-20 partes manuscritos reales y varios proveedores de IA.
 - Revisión de DPAs y residencia de datos de los proveedores de IA y cloud.
-- Decisión de ORM y estrategia de aislamiento multiempresa.
+- Reevaluación de RLS al llegar la autenticación o una tabla operativa con consultas cruzadas.
+
+## Resueltas
+
+- **ORM:** Prisma 7.10.1 con migraciones SQL versionadas; decisión registrada en `ARCHITECTURE.md` y `docs/technical-discovery.md`.
+- **Aislamiento inicial:** filtros de aplicación obligatorios con `tenantFilter`/`requireEmpresaId`/`assertTenantAccess`; RLS diferida con riesgo y trigger registrados. Ver `CONSTRAINTS.md`.
+- **Desarrollo local:** PostgreSQL nativo 18.7; no se requiere Docker en este repositorio.

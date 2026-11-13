@@ -9,6 +9,38 @@
 - `source`: `feature_list.json`
 - Esta spec no modifica código ni estado; el implementador actualizará `feature_list.json` y `PROGRESS.md` con evidencia real.
 
+## Implementation Findings (2026-11-13)
+
+Hallazgos al implementar y cómo se adaptó la spec. No amplían alcance.
+
+1. **No hay Docker en el entorno.** Se usa PostgreSQL 18.7 nativo en
+   `localhost:5432`, servicio `postgresql-x64-18`, rol de aplicación `central`
+   con `CREATEDB` y base `central_de_avisos`. No se crea `compose.yaml`; el
+   arranque local está documentado en `README.md` y `AGENTS.md`. El rol con
+   `CREATEDB` permite la shadow database de `prisma migrate dev`.
+2. **Versión elegida: Prisma 7.10.1** (`prisma`, `@prisma/client` y
+   `@prisma/adapter-pg`). Node 26.13.1 cumple el rango `>=24.0.0`. Prisma 7
+   cambia el setup respecto al plan original:
+   - requiere `prisma.config.ts` y ya no lee `.env` automáticamente; se carga
+     con `dotenv/config`;
+   - el generador por defecto es `prisma-client` y `output` es obligatorio; se
+     usa `src/generated/prisma`, ignorado por git y ESLint;
+   - `PrismaClient` exige un driver adapter; se usa `@prisma/adapter-pg`;
+   - `migrate dev` ya no ejecuta `generate`, por eso `init.sh` y `postinstall`
+     lo llaman explícitamente.
+3. **URL opcional para permitir el gate sin BD.** `prisma.config.ts` solo
+   declara `datasource.url` si `DATABASE_URL` existe. Así `prisma generate`,
+   `npm run build` e `init.sh` funcionan sin `.env`; los comandos de migración
+   fallan claro si falta la URL.
+4. **`prisma migrate reset` tiene un guard para agentes IA.** Prisma 7.10.1
+   bloquea el reset si detecta un agente. Para la verificación local se usó
+   `PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION` con el consentimiento explícito
+   del usuario y solo sobre la base de desarrollo. No ejecutarlo contra una base
+   con datos reales.
+5. **npm 11.20 avisa de install scripts no aprobados** (`prisma`,
+   `@prisma/engines`). El binario del schema engine ya está en el paquete y
+   `prisma generate`/`migrate` funcionaron; no se cambió la configuración de npm.
+
 ## Goal
 
 Dejar PostgreSQL conectado, migraciones reproducibles desde una base vacía y las tablas base `planes`, `empresas` y `usuarios` con `empresa_id`, más el contrato de aislamiento multiempresa y la señal de base de datos en `/health`.
@@ -82,12 +114,12 @@ para construir el dominio sin rehacer la persistencia ni exponer datos de otra e
 
 ### Open Unknowns
 
-- Versión exacta de Prisma y `@prisma/client`: se fija al instalar; el planner no ejecutó comandos ni asume versión.
-- Disponibilidad de Docker: `compose.yaml` es el camino propuesto; confirmar `docker compose` y registrar alternativa si no existe.
-- Versión de PostgreSQL local: se propone `postgres:16-alpine`; una instalación existente debe soportar UUID y `gen_random_uuid()`.
-- Prisma puede requerir un `output` de generador distinto según versión; si el cliente cae en `src/`, excluirlo de ESLint y no commitearlo.
-- Compatibilidad de Node 26 con la versión elegida de Prisma: verificar generate, migraciones y build.
-- El planner no tiene shell: los comandos de esta spec no se han ejecutado; la evidencia real la captura el implementador.
+- ~~Versión exacta de Prisma y `@prisma/client`~~: resuelto en implementación con 7.10.1.
+- ~~Disponibilidad de Docker~~: no hay Docker; se usa PostgreSQL nativo y se descarta `compose.yaml`.
+- ~~Versión de PostgreSQL local~~: resuelto con PostgreSQL 18.7 nativo; `gen_random_uuid()` disponible.
+- ~~Prisma puede requerir un `output` distinto~~: resuelto; cliente en `src/generated/prisma`, ignorado por git y ESLint.
+- ~~Compatibilidad de Node 26~~: resuelto; generate, migraciones, tests y build verificados con Node 26.13.1.
+- El planner no tenía shell; la evidencia real está en `feature_list.json` y `PROGRESS.md`.
 
 ## Technical Approach
 
@@ -113,7 +145,9 @@ para construir el dominio sin rehacer la persistencia ni exponer datos de otra e
 - `prisma/schema.prisma` — create; modelos, enums, mappings, FKs e índices.
 - `prisma/migrations/<timestamp>_init/migration.sql` — create; tablas, índices y FKs.
 - `prisma/migrations/<timestamp>_constraints/migration.sql` — create; CHECKs SQL.
-- `compose.yaml`, `.env.example` — create; PostgreSQL local y `DATABASE_URL` de ejemplo.
+- ~~`compose.yaml`~~ — no se crea; no hay Docker. `.env.example` — create; `DATABASE_URL` de ejemplo.
+- `prisma.config.ts` — create (hallazgo Prisma 7); configuración de esquema, migraciones y URL.
+- `src/db/db-test-setup.ts`, `src/db/db-test-utils.ts` — create; carga de `.env`, rollback de tests y utilidades.
 - `src/db/client.ts`, `src/db/tenant.ts` — create; singleton perezoso y contrato de tenant.
 - `src/db/tenant.test.ts`, `src/db/schema.db.test.ts`, `src/db/tenant-isolation.db.test.ts` — create; unitarios y constraints/aislamiento.
 - `src/lib/db-health.ts` — create; `SELECT 1` con timeout.
@@ -138,7 +172,7 @@ No tocar `src/app/page.tsx`, `src/app/layout.tsx` ni `src/app/globals.css`.
 
 - `ARCHITECTURE.md`: create — capa de datos, Prisma, migraciones, contrato de tenant, salud y decisión de no usar RLS todavía.
 - `CONSTRAINTS.md`: create — MUST toda consulta a tabla de tenant pasa por `tenantFilter`/`requireEmpresaId`; MUST toda evolución usa migraciones; MUST NOT `db push` en entornos compartidos; MUST NOT commitear `.env` ni cliente generado; RLS diferida y motivo.
-- `AGENTS.md`: update — requisitos PostgreSQL/Docker, scripts `db:*`, `test:db`, nuevo `/health` y comportamiento de `init.sh`.
+- `AGENTS.md`: update — requisitos PostgreSQL, scripts `db:*`, `test:db`, nuevo `/health` y comportamiento de `init.sh`.
 - `README.md`: update — arranque de PostgreSQL, `.env.example`, migraciones, `test:db` y salud.
 - `docs/technical-discovery.md`: update — confirmar Prisma y filtros de aplicación; retirar decisión pendiente de ORM.
 - `docs/risks-and-open-questions.md`: update — resolver la pregunta de aislamiento y registrar el riesgo residual de RLS diferida.
@@ -147,7 +181,7 @@ No tocar `src/app/page.tsx`, `src/app/layout.tsx` ni `src/app/globals.css`.
 
 ## Implementation Plan
 
-1. Confirmar Docker/PostgreSQL, instalar Prisma y `@prisma/client`, crear `compose.yaml`, `.env.example` y `.env` local.
+1. Confirmar PostgreSQL nativo (sin Docker), instalar Prisma 7, `@prisma/client` y `@prisma/adapter-pg`; crear `.env.example`, `.env` local y `prisma.config.ts`.
 2. Escribir `prisma/schema.prisma` con `planes`, `empresas`, `usuarios`, enums, mappings, FKs e índices.
 3. Generar migración inicial y migración SQL de constraints; aplicarlas sobre base vacía.
 4. Implementar `src/db/client.ts`, `src/db/tenant.ts`, `src/lib/db-health.ts` y actualizar `/health`.
@@ -157,42 +191,46 @@ No tocar `src/app/page.tsx`, `src/app/layout.tsx` ni `src/app/globals.css`.
 
 ## Implementation Tasks
 
-- [ ] Verificar Docker/PostgreSQL y registrar versión; documentar alternativa si no hay Docker.
-- [ ] Crear `compose.yaml`, `.env.example` y `.env` local con `DATABASE_URL`.
-- [ ] Instalar Prisma y `@prisma/client`; fijar versiones y añadir scripts `db:*`, `test:db` y `postinstall`.
-- [ ] Crear `prisma/schema.prisma` con modelos, enums, mappings, FKs e índices.
-- [ ] Generar migraciones `init` y `constraints` con los CHECK SQL.
-- [ ] Implementar `src/db/client.ts`, `src/db/tenant.ts` y `src/lib/db-health.ts`.
-- [ ] Actualizar `src/lib/health.ts`, `health.test.ts` y `src/app/health/route.ts`.
-- [ ] Crear `vitest.db.config.ts`, `schema.db.test.ts` y `tenant-isolation.db.test.ts`; excluir `*.db.test.ts` del gate unitario.
-- [ ] Actualizar `init.sh` para generar el cliente y mantener el gate sin arrancar PostgreSQL ni servidor.
-- [ ] Ejecutar `db:deploy` en base vacía, `db:reset`, `db:status`, `test:db`, gate completo e `init.sh` con y sin BD.
-- [ ] Actualizar documentación durable, `PROGRESS.md` y `feature_list.json` con evidencia o `blocked`.
+- [x] Verificar PostgreSQL nativo y registrar versión (18.7); documentar el arranque local sin Docker.
+- [x] Crear `.env.example`, `.env` local y `prisma.config.ts` con `DATABASE_URL` (sin `compose.yaml`).
+- [x] Instalar Prisma 7.10.1, `@prisma/client` y `@prisma/adapter-pg`; fijar versiones y añadir scripts `db:*`, `test:db` y `postinstall`.
+- [x] Crear `prisma/schema.prisma` con modelos, enums, mappings, FKs e índices.
+- [x] Generar migraciones `init` y `constraints` con los CHECK SQL.
+- [x] Implementar `src/db/client.ts`, `src/db/tenant.ts` y `src/lib/db-health.ts`.
+- [x] Actualizar `src/lib/health.ts`, `health.test.ts` y `src/app/health/route.ts`.
+- [x] Crear `vitest.db.config.ts`, `schema.db.test.ts` y `tenant-isolation.db.test.ts`; excluir `*.db.test.ts` del gate unitario.
+- [x] Actualizar `init.sh` para generar el cliente y mantener el gate sin arrancar PostgreSQL ni servidor.
+- [x] Ejecutar `db:deploy` en base vacía, `db:reset`, `db:status`, `test:db`, gate completo e `init.sh` con y sin BD.
+- [x] Actualizar documentación durable, `PROGRESS.md` y `feature_list.json` con evidencia.
 
 ## Verification Plan
 
 ### Base de datos
 
-Con Git Bash en Windows y Docker disponible:
+Con PostgreSQL 18.7 nativo ya iniciado en `localhost:5432` (sin Docker):
+
+```powershell
+$env:Path = "C:\Program Files\PostgreSQL\18\bin;" + $env:Path
+psql "postgresql://central:central@localhost:5432/postgres" -c "CREATE DATABASE central_de_avisos_verify;"
+```
 
 ```bash
-docker compose up -d db
 cp .env.example .env
 npm run db:deploy
 npm run db:status
 npm run test:db
+# db:reset requiere consentimiento explícito por el guard de Prisma 7 para agentes IA
 npm run db:reset
 npm run db:deploy
 npm run db:status
 ```
 
-Base realmente vacía:
+Base realmente vacía (usar la URL de verificación en la sesión):
 
 ```bash
-docker compose exec db createdb -U central central_de_avisos_verify
 DATABASE_URL="postgresql://central:central@localhost:5432/central_de_avisos_verify?schema=public" npm run db:deploy
 DATABASE_URL="postgresql://central:central@localhost:5432/central_de_avisos_verify?schema=public" npm run db:status
-docker compose exec db dropdb -U central central_de_avisos_verify
+psql "postgresql://central:central@localhost:5432/postgres" -c "DROP DATABASE central_de_avisos_verify;"
 ```
 
 Resultado esperado: migraciones aplicadas sin pasos manuales, estado “up to date”, constraints y aislamiento en verde.
@@ -216,8 +254,12 @@ npm run dev
 ```
 
 - Con PostgreSQL levantado: `http://localhost:3000/health` devuelve 200 con `database.status: "up"`.
-- Tras `docker compose stop db`, recargar `/health`: 503 con `status: "degraded"` y `database.status: "down"`, sin credenciales.
-- Tras `docker compose start db`, vuelve a 200. Detener servidor y contenedor al terminar.
+- Para simular la base inaccesible sin parar el servicio del sistema, arranca el
+  servidor con
+  `DATABASE_URL="postgresql://central:central@localhost:5999/central_de_avisos?schema=public"`;
+  `/health` devuelve 503 con `status: "degraded"` y `database.status: "down"`,
+  sin credenciales.
+- Con la URL válida vuelve a 200. Detener el servidor al terminar.
 
 ### E2E
 
@@ -225,7 +267,7 @@ No se añade Playwright: no hay flujo de usuario, auth, routing nuevo ni UI; la 
 
 ## Evidence To Capture
 
-- Versiones de Node, npm, Prisma, `@prisma/client`, PostgreSQL/Docker y `DATABASE_URL` usada (sin secretos reales).
+- Versiones de Node, npm, Prisma, `@prisma/client`, PostgreSQL nativo y `DATABASE_URL` usada (sin secretos reales).
 - Nombres de migraciones y salida de `npm run db:status`.
 - Salida de `npm run test:db` con constraints y aislamiento entre dos empresas.
 - Salida de `db:deploy` sobre base vacía y de `db:reset`.

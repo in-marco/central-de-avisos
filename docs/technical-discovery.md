@@ -12,7 +12,7 @@
 
 - **Framework:** Next.js con TypeScript (App Router).
 - **Base de datos:** PostgreSQL gestionado.
-- **ORM:** Prisma o Drizzle; decidir al iniciar implementación.
+- **ORM:** Prisma 7 con el generador `prisma-client`, driver adapter `@prisma/adapter-pg` y migraciones SQL versionadas.
 - **UI:** Tailwind CSS con componentes accesibles; seguir `DESIGN.md`.
 - **Auth:** email y contraseña con invitaciones, sesiones seguras y recuperación de contraseña.
 - **PDF:** generación server-side de facturas.
@@ -24,7 +24,7 @@
 ## Data and Storage
 
 - PostgreSQL en región UE.
-- Aislamiento multiempresa con `empresa_id` en todas las tablas operativas. Decidir entre Row Level Security y filtros de aplicación con pruebas de autorización.
+- Aislamiento multiempresa con `empresa_id` en todas las tablas operativas y filtros de aplicación obligatorios (`src/db/tenant.ts`). RLS queda diferida con el riesgo residual registrado en `CONSTRAINTS.md` y `docs/risks-and-open-questions.md`.
 - Fotos originales de partes y PDFs firmados en object storage privado, con URLs firmadas.
 - Facturas emitidas inmutables: se guarda el PDF, su huella y los datos de firma.
 - Registro de auditoría append-only para acciones sensibles.
@@ -56,8 +56,8 @@
 
 ## Testing and Verification
 
-- **Unitarias:** cálculo de horas, ajustes justificados, totales, IVA, numeración y máquina de estados.
-- **Integración:** aprobación → factura, anulación, generación mensual, aislamiento entre empresas.
+- **Unitarias:** cálculo de horas, ajustes justificados, totales, IVA, numeración y máquina de estados. `npm test` no usa base de datos.
+- **Integración:** esquema, constraints, FKs, aislamiento entre empresas, aprobación → factura, anulación y generación mensual. `npm run test:db` usa PostgreSQL real y transacciones con rollback.
 - **E2E:** ciclo completo con Playwright, incluida subida de foto de parte manuscrito y descarga de PDF.
 - **Seguridad:** pruebas de autorización por rol y por tenant; ninguna ruta debe confiar en el cliente.
 - **Fiscal:** verificar firma y huella de cada PDF generado.
@@ -77,3 +77,18 @@
 - El modo VERIFACTU activo queda fuera del MVP, pero la arquitectura no debe bloquearlo.
 - El coste y la latencia de la IA deben medirse con el proveedor elegido.
 - Un único equipo pequeño: priorizar un monolito Next.js y evitar infraestructura prematura.
+
+## Decisiones Confirmadas
+
+- **Prisma 7.10.1** con PostgreSQL 18.7 local: el ciclo `migrate deploy` /
+  `migrate status` / `migrate reset` cubre la base inicial y el esquema tipado
+  reduce divergencias con TypeScript. El cliente se genera en
+  `src/generated/prisma` y no se versiona.
+- **Filtros de aplicación** en lugar de RLS en esta fase: no hay auth todavía,
+  Prisma con pooling exigiría `set_config` por transacción y el MVP admite
+  filtros con pruebas. Ver `ARCHITECTURE.md` y `CONSTRAINTS.md`.
+- **PostgreSQL nativo** para desarrollo local: no se usa Docker en este
+  repositorio; el arranque documentado está en `README.md`.
+- **Prisma 7 no carga `.env` automáticamente** y exige driver adapter. La URL
+  vive en `prisma.config.ts` y `PrismaClient` se crea con
+  `@prisma/adapter-pg`.

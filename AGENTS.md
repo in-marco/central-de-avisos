@@ -11,6 +11,8 @@ Este repositorio contiene una central de avisos multiempresa para empresas de se
 
 Leer solo cuando sea relevante:
 
+- `ARCHITECTURE.md` — capas, base de datos, migraciones, contrato de tenant y salud.
+- `CONSTRAINTS.md` — reglas MUST/MUST NOT durables antes de tocar datos o tenancy.
 - `docs/user-and-access-model.md` — usuarios, roles, permisos, aislamiento y revocación.
 - `docs/technical-discovery.md` — stack, datos, integraciones, despliegue y operación.
 - `DESIGN.md` — cualquier cambio de interfaz o de dirección visual.
@@ -45,22 +47,40 @@ Antes de escribir código:
 
 ## Commands
 
-App Next.js + TypeScript + Tailwind en `src/` con npm como gestor de paquetes.
-En Windows, si el PATH heredado no incluye Node.js:
+App Next.js + TypeScript + Tailwind en `src/`, Prisma 7 con PostgreSQL y npm
+como gestor de paquetes. En Windows, si el PATH heredado no incluye Node.js:
 
 ```powershell
 $env:Path = "C:\Program Files\nodejs;" + $env:Path
 ```
 
-Instalación y gate estándar:
+PostgreSQL local (no se requiere Docker en este repositorio):
+
+```bash
+cp .env.example .env   # ajustar DATABASE_URL si hace falta
+npm run db:deploy      # aplica migraciones
+npm run db:status      # comprueba el historial
+```
+
+Instalación y gate estándar (no necesita base de datos):
 
 ```bash
 npm ci
+npm run db:generate
 npm run lint
 npm run typecheck
 npm test
 npm run build
 ```
+
+Tests de integración reales (requieren PostgreSQL y `DATABASE_URL`):
+
+```bash
+npm run test:db
+```
+
+Otros comandos de base de datos: `npm run db:migrate`, `npm run db:reset`.
+No usar `prisma db push` para cambios compartidos; ver `CONSTRAINTS.md`.
 
 Desarrollo manual:
 
@@ -69,11 +89,12 @@ npm run dev
 ```
 
 - Home: `http://localhost:3000/`
-- Salud: `http://localhost:3000/health`
+- Salud: `http://localhost:3000/health` (200 si PostgreSQL responde; 503
+  `degraded` si no, sin filtrar credenciales)
 
-`init.sh` ejecuta el gate completo (instala si falta `node_modules`) y no
-arranca el servidor de desarrollo. En Windows se ejecuta con Git Bash:
-`& "C:\Program Files\Git\bin\bash.exe" init.sh`.
+`init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
+el gate completo; no arranca PostgreSQL ni el servidor de desarrollo. En Windows
+se ejecuta con Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`.
 
 ## Definition Of Done
 

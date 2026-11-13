@@ -35,14 +35,27 @@
     "depends_on": [
       "bootstrap-web-app"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Aplicar migraciones sobre una base de datos vacía.",
       "Comprobar que /health informa de la conexión a PostgreSQL.",
       "Ejecutar los tests de esquema y restricciones de empresa_id."
     ],
-    "evidence": [],
-    "notes": "Decidir ORM y estrategia de aislamiento en esta feature; ver docs/technical-discovery.md y docs/risks-and-open-questions.md."
+    "evidence": [
+      "Entorno: Windows, Node 26.13.1, npm 11.20.0, Next.js 16.4.6, Prisma 7.10.1, @prisma/client 7.10.1, @prisma/adapter-pg 7.10.1, PostgreSQL 18.7 nativo en localhost:5432 (rol central con CREATEDB, base central_de_avisos). Sin Docker; no se creó compose.yaml.",
+      "Decisiones: Prisma 7 con generador prisma-client (output src/generated/prisma, ignorado por git y ESLint), driver adapter @prisma/adapter-pg y prisma.config.ts con URL opcional para que generate/build/init.sh funcionen sin DATABASE_URL. Aislamiento por filtros de aplicación; RLS diferida con riesgo registrado en CONSTRAINTS.md.",
+      "Migraciones: 20261113230600_init (enums, tablas planes/empresas/usuarios, UUID gen_random_uuid(), FKs Restrict, índices, unique de nombre/nif/email) y 20261113230613_constraints (planes_importe_mensual_no_negativo, usuarios_email_normalizado, usuarios_superadmin_empresa_coherente).",
+      "npm run db:deploy sobre base de verificación vacía central_de_avisos_verify: aplicó las 2 migraciones; npm run db:status devolvió 'Database schema is up to date!'. Verificadas las tablas planes, empresas, usuarios y los 3 CHECK con psql; base de verificación eliminada después.",
+      "npm run db:reset: reset correcto y aplicación de las 2 migraciones (requirió PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION por el guard de Prisma 7 para agentes IA, con consentimiento explícito del usuario y solo sobre la base local de desarrollo). Después npm run db:deploy sin migraciones pendientes y npm run db:status up to date.",
+      "npm run test:db: exit 0; 2 archivos y 13 tests verdes. schema.db.test.ts (10) cubre tablas, CHECK, defaults, importe negativo, email no normalizado, no-superadmin sin empresa, superadmin con empresa, empresa inexistente, email duplicado y FK Restrict al borrar un plan. tenant-isolation.db.test.ts (3) cubre tenantFilter entre dos empresas, superadmin excluido y assertTenantAccess.",
+      "npm test: exit 0; 2 archivos y 15 tests unitarios (health payload 200/503 sin credenciales y contrato de tenant). Los tests *.db.test.ts quedan excluidos del gate unitario.",
+      "npm run lint, npm run typecheck, npm run build: exit 0. Build Next.js 16.4.6 con / estática, /_not-found estática y /health dinámica.",
+      "init.sh sin .env y con node_modules eliminado: npm ci + postinstall (prisma generate) + db:generate + lint + typecheck + test + build, exit 0, sin arrancar PostgreSQL ni servidor. init.sh con DB arriba y con DATABASE_URL a puerto inaccesible: exit 0 en ambos casos.",
+      "Smoke con next start: GET /health con PostgreSQL real → 200 {\"status\":\"ok\",\"service\":\"central-de-avisos\",\"timestamp\":\"2026-11-13T23:10:11.058Z\",\"database\":{\"status\":\"up\"}}; con DATABASE_URL a localhost:5999 → 503 {\"status\":\"degraded\",\"service\":\"central-de-avisos\",\"timestamp\":\"2026-11-13T23:10:19.688Z\",\"database\":{\"status\":\"down\"}}. Sin credenciales ni cadena de conexión; servidores detenidos y puertos liberados.",
+      "Documentación durable creada/actualizada: ARCHITECTURE.md, CONSTRAINTS.md, AGENTS.md, README.md, docs/technical-discovery.md, docs/risks-and-open-questions.md y docs/specs/database-foundation.md (hallazgos de Prisma 7 y PostgreSQL nativo). No se tocaron page.tsx, layout.tsx ni globals.css; no hay auth, roles, dominio, facturación, seeds ni RLS.",
+      "Validación independiente (2026-11-14): db:deploy desde base vacía aplicó 2 migraciones y db:status quedó up to date; db:reset reconstruyó el esquema; catálogo con 3 tablas, 2 enums, 8 índices, 2 FKs Restrict y 3 CHECK; npm run test:db 2 archivos/13 tests; lint/typecheck/test(15)/build exit 0 sin DATABASE_URL; init.sh desde node_modules eliminado ejecutó npm ci + postinstall + db:generate + gate sin arrancar servicios; /health 200 up y 503 down sin credenciales."
+    ],
+    "notes": "Prisma 7.10.1 + PostgreSQL 18.7 nativo, sin Docker. Filtros de aplicación con requireEmpresaId/tenantFilter/assertTenantAccess; RLS diferida con riesgo residual en CONSTRAINTS.md. Validación independiente: accept (2026-11-14). Siguiente paso: especificar email-password-auth."
   },
   {
     "id": "email-password-auth",

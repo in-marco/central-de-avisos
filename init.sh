@@ -46,6 +46,9 @@ else
 fi
 
 echo
+echo "==> npm run db:generate"
+npm run db:generate
+echo
 echo "==> npm run lint"
 npm run lint
 echo
@@ -60,6 +63,11 @@ npm run build
 
 echo
 echo "Verificación completada."
+echo "Base de datos (opcional, requiere PostgreSQL accesible):"
+echo "  1. Copia .env.example a .env y ajusta DATABASE_URL."
+echo "  2. npm run db:deploy   # aplica migraciones"
+echo "  3. npm run db:status   # comprueba el historial"
+echo "  4. npm run test:db     # tests de integración reales"
 echo "Para desarrollo manual: npm run dev"
 echo "  Home:   http://localhost:3000/"
 echo "  Salud:  http://localhost:3000/health"

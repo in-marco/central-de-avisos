@@ -9,6 +9,9 @@ next-env.d.ts
 # testing
 /coverage
 
+# prisma client generado (se regenera con npm run db:generate)
+/src/generated/
+
 # production
 /build
 
