@@ -3,16 +3,29 @@
     "id": "bootstrap-web-app",
     "area": "foundation",
     "title": "Arrancar la aplicación web",
-    "user_visible_behavior": "La aplicación Next.js arranca, muestra una página de salud y pasa lint, typecheck y tests.",
+    "user_visible_behavior": "La aplicación Next.js arranca, expone el endpoint `/health` y pasa lint, typecheck, tests y build.",
     "depends_on": [],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
-      "Ejecutar la verificación base definida en init.sh: lint, typecheck y tests.",
+      "Ejecutar la verificación base definida en init.sh: lint, typecheck, tests y build.",
       "Abrir /health y comprobar que responde correctamente.",
       "Arrancar el servidor de desarrollo y cargar la página inicial."
     ],
-    "evidence": [],
-    "notes": "Stack Next.js + TypeScript según docs/technical-discovery.md. Primera feature del MVP; el repositorio aún no tiene aplicación."
+    "evidence": [
+      "Entorno: Node v26.13.1 y npm 11.20.0 en Windows (PATH antepuesto con C:\\Program Files\\nodejs).",
+      "npm run lint: exit 0 con ESLint 9.39.5; sin errores ni warnings de lint.",
+      "npm run typecheck: exit 0 con TypeScript 5.9.3 (tsc --noEmit).",
+      "npm test: exit 0 con Vitest 5.1.0; 1 archivo y 2 tests de src/lib/health.test.ts.",
+      "npm run build: exit 0 con Next.js 16.4.6 (Turbopack); rutas / (estática), /_not-found (estática) y /health (dinámica).",
+      "init.sh desde estado limpio: con node_modules eliminado ejecutó npm ci; con .next y next-env.d.ts eliminados ejecutó lint, typecheck, test y build, todos exit 0; no arranca servidor y termina imprimiendo npm run dev.",
+      "Smoke manual con npm run dev: GET / 200 con 'Central de avisos' y enlace a /health; GET /health 200 application/json con {\"status\":\"ok\",\"service\":\"central-de-avisos\",\"timestamp\":\"2026-11-13T22:12:51.656Z\"}; GET /ruta-inexistente 404; servidor detenido y puerto 3000 liberado.",
+      "Reparación de validación (2026-11-13 23:36): el eyebrow de la home pasó de text-accent (#C08A3E, 3.02:1 sobre blanco) a text-primary (#12304D, 13.50:1 sobre surface #FFFFFF); el acento queda solo en el focus ring. Re-ejecutados npm run lint, npm run typecheck, npm test, npm run build e init.sh, todos exit 0.",
+      "Validación independiente (2026-11-13): re-ejecutados npm run lint, npm run typecheck, npm test y npm run build, todos exit 0 (lint sin warnings; 1 archivo/2 tests; build Next.js 16.4.6 con / estática, /_not-found estática y /health dinámica).",
+      "init.sh re-verificado desde estado limpio con node_modules eliminado: ejecutó npm ci (381 paquetes) y después lint, typecheck, test y build, exit 0, sin arrancar servidor.",
+      "Contraste corregido verificado numéricamente: eyebrow text-primary #12304D sobre surface #FFFFFF = 13.50:1 (antes text-accent #C08A3E = 3.02:1); cero coincidencias de text-accent como texto en src/.",
+      "Smoke de validación: GET / 200 con 'Central de avisos' y enlace a /health; GET /health 200 application/json con status ok; GET /ruta-inexistente 404; servidor detenido y puerto liberado."
+    ],
+    "notes": "Stack Next.js + TypeScript + Tailwind según docs/technical-discovery.md. La app bootstrap existe: home y /health operativas y verificadas con lint, typecheck, test y build. Validación independiente: accept (2026-11-13). Siguiente paso: especificar database-foundation."
   },
   {
     "id": "database-foundation",

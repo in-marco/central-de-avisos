@@ -12,7 +12,6 @@ REQUIRED_FILES=(
 )
 
 echo "Repository: $(pwd)"
-echo "Harness status: pre-bootstrap"
 
 for file in "${REQUIRED_FILES[@]}"; do
   if [[ ! -f "$file" ]]; then
@@ -21,15 +20,46 @@ for file in "${REQUIRED_FILES[@]}"; do
   fi
 done
 
-echo "Harness files: OK"
-echo "Application stack is not initialized yet."
-echo "Next step: read PROGRESS.md, choose the first ready feature from feature_list.json and implement it."
+# En Windows, npm puede no estar en el PATH heredado de Git Bash.
+if ! command -v npm >/dev/null 2>&1 && [[ -d "/c/Program Files/nodejs" ]]; then
+  export PATH="/c/Program Files/nodejs:$PATH"
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  echo "npm no está disponible. Instala Node.js LTS y añade npm al PATH." >&2
+  exit 1
+fi
+
+echo "Node: $(node --version)"
+echo "npm:  $(npm --version)"
+
+if [[ ! -d node_modules ]]; then
+  if [[ -f package-lock.json ]]; then
+    echo "Instalando dependencias con npm ci..."
+    npm ci
+  else
+    echo "Instalando dependencias con npm install..."
+    npm install
+  fi
+else
+  echo "Dependencias ya instaladas (node_modules existe)."
+fi
+
 echo
-echo "Expected future commands after bootstrap:"
-echo "  npm install"
-echo "  npm run lint"
-echo "  npm run typecheck"
-echo "  npm test"
-echo "  npm run dev"
+echo "==> npm run lint"
+npm run lint
 echo
-echo "This pre-bootstrap check exits successfully by design."
+echo "==> npm run typecheck"
+npm run typecheck
+echo
+echo "==> npm test"
+npm test
+echo
+echo "==> npm run build"
+npm run build
+
+echo
+echo "Verificación completada."
+echo "Para desarrollo manual: npm run dev"
+echo "  Home:   http://localhost:3000/"
+echo "  Salud:  http://localhost:3000/health"

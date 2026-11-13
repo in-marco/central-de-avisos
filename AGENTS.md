@@ -43,6 +43,38 @@ Antes de escribir código:
 - `PROGRESS.md`: estado verificado actual y registro breve de sesiones.
 - `init.sh`: camino estándar de arranque y verificación.
 
+## Commands
+
+App Next.js + TypeScript + Tailwind en `src/` con npm como gestor de paquetes.
+En Windows, si el PATH heredado no incluye Node.js:
+
+```powershell
+$env:Path = "C:\Program Files\nodejs;" + $env:Path
+```
+
+Instalación y gate estándar:
+
+```bash
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+Desarrollo manual:
+
+```bash
+npm run dev
+```
+
+- Home: `http://localhost:3000/`
+- Salud: `http://localhost:3000/health`
+
+`init.sh` ejecuta el gate completo (instala si falta `node_modules`) y no
+arranca el servidor de desarrollo. En Windows se ejecuta con Git Bash:
+`& "C:\Program Files\Git\bin\bash.exe" init.sh`.
+
 ## Definition Of Done
 
 Una feature está terminada solo si:
@@ -61,3 +93,13 @@ Antes de terminar una sesión:
 2. Actualizar `feature_list.json`.
 3. Registrar riesgos o bloqueos sin resolver.
 4. Dejar el repo listo para que la siguiente sesión ejecute `./init.sh` sin pasos manuales.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
