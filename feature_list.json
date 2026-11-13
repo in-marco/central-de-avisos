@@ -1,0 +1,549 @@
+[
+  {
+    "id": "bootstrap-web-app",
+    "area": "foundation",
+    "title": "Arrancar la aplicación web",
+    "user_visible_behavior": "La aplicación Next.js arranca, muestra una página de salud y pasa lint, typecheck y tests.",
+    "depends_on": [],
+    "status": "not_started",
+    "verification": [
+      "Ejecutar la verificación base definida en init.sh: lint, typecheck y tests.",
+      "Abrir /health y comprobar que responde correctamente.",
+      "Arrancar el servidor de desarrollo y cargar la página inicial."
+    ],
+    "evidence": [],
+    "notes": "Stack Next.js + TypeScript según docs/technical-discovery.md. Primera feature del MVP; el repositorio aún no tiene aplicación."
+  },
+  {
+    "id": "database-foundation",
+    "area": "foundation",
+    "title": "Fundamento de base de datos multiempresa",
+    "user_visible_behavior": "PostgreSQL está conectado, las migraciones se aplican desde cero y existen las tablas base de empresas, planes y usuarios con empresa_id.",
+    "depends_on": [
+      "bootstrap-web-app"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Aplicar migraciones sobre una base de datos vacía.",
+      "Comprobar que /health informa de la conexión a PostgreSQL.",
+      "Ejecutar los tests de esquema y restricciones de empresa_id."
+    ],
+    "evidence": [],
+    "notes": "Decidir ORM y estrategia de aislamiento en esta feature; ver docs/technical-discovery.md y docs/risks-and-open-questions.md."
+  },
+  {
+    "id": "email-password-auth",
+    "area": "auth",
+    "title": "Inicio de sesión con email y contraseña",
+    "user_visible_behavior": "Un usuario puede iniciar y cerrar sesión con email y contraseña; las rutas privadas exigen sesión.",
+    "depends_on": [
+      "database-foundation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Iniciar sesión con un usuario sembrado y acceder a una ruta privada.",
+      "Rechazar contraseña incorrecta y usuario inexistente.",
+      "Cerrar sesión y comprobar que la ruta privada redirige al login."
+    ],
+    "evidence": [],
+    "notes": "Email único global y sin autoregistro; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "superadmin-company-plan",
+    "area": "tenancy",
+    "title": "Alta de empresa y plan por el superadmin",
+    "user_visible_behavior": "El superadmin crea una empresa de servicios con datos fiscales, le asigna un plan fijo mensual e invita a su administrador.",
+    "depends_on": [
+      "email-password-auth"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Crear una empresa con plan desde el panel de superadmin.",
+      "Comprobar que aparece en el listado de empresas y que se genera una invitación para el administrador.",
+      "Intentar la acción con un rol que no sea superadmin y recibir 403."
+    ],
+    "evidence": [],
+    "notes": "El plan es de importe fijo mensual; ver docs/build-brief.md y docs/domain-model.md."
+  },
+  {
+    "id": "company-admin-onboarding",
+    "area": "tenancy",
+    "title": "Activación del administrador invitado",
+    "user_visible_behavior": "El administrador invitado acepta la invitación, define su contraseña y entra en el panel de su empresa.",
+    "depends_on": [
+      "superadmin-company-plan"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Aceptar una invitación válida y completar el alta de contraseña.",
+      "Comprobar que el usuario entra en el contexto de su empresa.",
+      "Rechazar una invitación caducada o ya usada."
+    ],
+    "evidence": [],
+    "notes": "La caducidad de invitaciones se define en implementación; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "role-based-permissions",
+    "area": "auth",
+    "title": "Permisos por rol en servidor",
+    "user_visible_behavior": "Cada rol solo puede acceder a las rutas y acciones permitidas, y la interfaz oculta lo que no puede usar.",
+    "depends_on": [
+      "company-admin-onboarding"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Ejecutar una matriz de pruebas por rol sobre rutas y acciones clave.",
+      "Comprobar 403 en acciones no permitidas y navegación coherente en la interfaz.",
+      "Verificar que los roles combinables suman permisos."
+    ],
+    "evidence": [],
+    "notes": "Roles: administrador, oficina, técnico y cliente; superadmin separado. Ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "company-billing-settings",
+    "area": "tenancy",
+    "title": "Configuración fiscal y tarifas de la empresa",
+    "user_visible_behavior": "El administrador edita los datos fiscales, la serie de factura, el modo NO-VERIFACTU y la tarifa horaria por defecto.",
+    "depends_on": [
+      "company-admin-onboarding",
+      "role-based-permissions"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Editar NIF, dirección, serie, tarifa y modo fiscal; recargar y comprobar persistencia.",
+      "Comprobar que un usuario que no es administrador recibe 403.",
+      "Validar errores de formato en NIF y tarifa."
+    ],
+    "evidence": [],
+    "notes": "El modo VERIFACTU activo queda fuera del MVP; ver docs/build-brief.md."
+  },
+  {
+    "id": "client-records",
+    "area": "clients",
+    "title": "Clientes con sedes y contactos",
+    "user_visible_behavior": "La oficina crea y edita clientes con datos fiscales, varias sedes y contactos, y los ve en un listado.",
+    "depends_on": [
+      "role-based-permissions"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Crear un cliente con dos sedes y dos contactos; editar sus datos y listarlos.",
+      "Comprobar que la factura se asocia al cliente, no a la sede.",
+      "Intentar leer un cliente de otra empresa y recibir 404 o 403."
+    ],
+    "evidence": [],
+    "notes": "El cliente pertenece a una empresa de servicios; ver docs/domain-model.md."
+  },
+  {
+    "id": "client-portal-invitation",
+    "area": "clients",
+    "title": "Invitación al portal de cliente",
+    "user_visible_behavior": "La oficina invita a un contacto del cliente; al entrar, ve solo los datos de su cliente.",
+    "depends_on": [
+      "client-records",
+      "email-password-auth"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Invitar a un contacto, aceptar la invitación y acceder al portal.",
+      "Comprobar que solo ve sus sedes, avisos y facturas.",
+      "Intentar abrir datos de otro cliente de la misma empresa y recibir 403."
+    ],
+    "evidence": [],
+    "notes": "El usuario de cliente pertenece a un cliente dentro de una empresa; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "office-aviso-creation",
+    "area": "avisos",
+    "title": "Alta de aviso desde oficina",
+    "user_visible_behavior": "La oficina crea un aviso con cliente, sede, contacto, descripción y prioridad, y lo ve en el listado.",
+    "depends_on": [
+      "client-records"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Crear avisos con prioridad Normal, Alta y Urgente.",
+      "Comprobar que faltan campos obligatorios y se muestran errores.",
+      "Ver el aviso en el listado y en su detalle."
+    ],
+    "evidence": [],
+    "notes": "Aviso = solicitud de intervención; ver CONTEXT.md y docs/domain-model.md."
+  },
+  {
+    "id": "client-aviso-creation",
+    "area": "avisos",
+    "title": "Alta de aviso desde el portal de cliente",
+    "user_visible_behavior": "El usuario de cliente crea un aviso para una de sus sedes y la oficina lo ve en su bandeja.",
+    "depends_on": [
+      "client-portal-invitation",
+      "office-aviso-creation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Crear un aviso desde el portal con sede y descripción.",
+      "Comprobar que la oficina lo ve como Nuevo.",
+      "Intentar elegir una sede de otro cliente y comprobar que no está disponible."
+    ],
+    "evidence": [],
+    "notes": "Todo aviso de cliente pasa por validación de oficina; ver docs/domain-model.md."
+  },
+  {
+    "id": "aviso-validation-pool",
+    "area": "avisos",
+    "title": "Validación de avisos y bolsa de pendientes",
+    "user_visible_behavior": "La oficina valida un aviso y lo publica en la bolsa, o lo cancela con un motivo.",
+    "depends_on": [
+      "office-aviso-creation",
+      "client-aviso-creation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Validar un aviso Nuevo y comprobar que pasa a Pendiente y aparece en la bolsa.",
+      "Cancelar un aviso con motivo y comprobar que sale de la bolsa.",
+      "Intentar validar un aviso incompleto y recibir un error claro."
+    ],
+    "evidence": [],
+    "notes": "Estados del aviso en docs/domain-model.md."
+  },
+  {
+    "id": "technician-inbox",
+    "area": "avisos",
+    "title": "Bandeja de avisos del técnico",
+    "user_visible_behavior": "El técnico ve sus avisos asignados y los pendientes de la bolsa, ordenados por prioridad y antigüedad.",
+    "depends_on": [
+      "role-based-permissions",
+      "aviso-validation-pool"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Abrir la bandeja con un técnico y comprobar las dos secciones.",
+      "Verificar el orden por prioridad y después por antigüedad.",
+      "Comprobar el uso en un viewport móvil de 390 px."
+    ],
+    "evidence": [],
+    "notes": "Diseño mobile-first en DESIGN.md; sin offline ni notificaciones."
+  },
+  {
+    "id": "office-aviso-assignment",
+    "area": "avisos",
+    "title": "Asignación de aviso a un técnico",
+    "user_visible_behavior": "La oficina asigna o reasigna un aviso a un técnico y este lo ve en su bandeja.",
+    "depends_on": [
+      "technician-inbox"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Asignar un aviso pendiente a un técnico y comprobarlo en su bandeja.",
+      "Reasignarlo a otro técnico y verificar que desaparece del primero.",
+      "Comprobar que la reasignación queda en auditoría."
+    ],
+    "evidence": [],
+    "notes": "La asignación no impide que el técnico tome otros avisos de la bolsa."
+  },
+  {
+    "id": "technician-aviso-claim",
+    "area": "avisos",
+    "title": "Toma de aviso desde la bolsa",
+    "user_visible_behavior": "Un técnico toma un aviso de la bolsa y pasa a estar asignado a él.",
+    "depends_on": [
+      "technician-inbox"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Tomar un aviso pendiente y comprobar que cambia a Asignado.",
+      "Comprobar que desaparece de la bolsa de los demás técnicos.",
+      "Intentar tomar un aviso ya asignado y recibir un error de conflicto."
+    ],
+    "evidence": [],
+    "notes": "La bolsa es común para todos los técnicos de la empresa."
+  },
+  {
+    "id": "technician-part-creation",
+    "area": "partes",
+    "title": "Registro manual de un parte",
+    "user_visible_behavior": "El técnico crea un parte con fecha y hora de inicio y fin, descripción y comentarios; el sistema calcula las horas.",
+    "depends_on": [
+      "office-aviso-assignment",
+      "technician-aviso-claim"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Crear un parte con hora de inicio y fin válidas y comprobar las horas calculadas.",
+      "Rechazar una hora de fin anterior al inicio.",
+      "Comprobar que el parte aparece bajo el aviso correcto."
+    ],
+    "evidence": [],
+    "notes": "Las horas se introducen manualmente; ver docs/build-brief.md y docs/domain-model.md."
+  },
+  {
+    "id": "part-material-lines",
+    "area": "partes",
+    "title": "Materiales de un parte",
+    "user_visible_behavior": "El técnico añade materiales en texto libre con cantidad y precio, y el total del parte se actualiza.",
+    "depends_on": [
+      "technician-part-creation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Añadir dos líneas de material y comprobar el total.",
+      "Rechazar cantidades o precios negativos.",
+      "Editar y eliminar una línea antes del cierre."
+    ],
+    "evidence": [],
+    "notes": "Sin catálogo ni stock en el MVP; ver docs/build-brief.md."
+  },
+  {
+    "id": "part-photo-upload",
+    "area": "partes",
+    "title": "Subida de foto del parte manuscrito",
+    "user_visible_behavior": "El técnico sube una foto del parte en papel y queda vinculada al parte con acceso privado.",
+    "depends_on": [
+      "technician-part-creation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Subir una imagen JPEG o PNG válida y verla asociada al parte.",
+      "Comprobar que la URL es privada y caduca.",
+      "Rechazar archivos demasiado grandes o con formato no permitido."
+    ],
+    "evidence": [],
+    "notes": "Almacenamiento en object storage europeo; ver docs/technical-discovery.md."
+  },
+  {
+    "id": "ai-part-extraction",
+    "area": "partes",
+    "title": "Extracción IA de datos del parte",
+    "user_visible_behavior": "La IA analiza la foto y devuelve un JSON con los campos del parte y la confianza de cada campo.",
+    "depends_on": [
+      "part-photo-upload"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Procesar una foto de prueba y validar el JSON contra el esquema.",
+      "Comprobar que cada campo incluye confianza y que los errores del proveedor se gestionan.",
+      "Probar una imagen ilegible y verificar el fallback manual."
+    ],
+    "evidence": [],
+    "notes": "Proveedor cloud con abstracción; ver docs/technical-discovery.md y docs/risks-and-open-questions.md."
+  },
+  {
+    "id": "ai-part-draft",
+    "area": "partes",
+    "title": "Borrador de parte desde la extracción IA",
+    "user_visible_behavior": "El sistema crea un borrador de parte con los datos extraídos y lo guarda automáticamente si supera el umbral de confianza.",
+    "depends_on": [
+      "ai-part-extraction",
+      "technician-part-creation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Con una extracción de alta confianza, comprobar que se crea el borrador vinculado a la foto.",
+      "Con baja confianza, comprobar que se exige revisión manual.",
+      "Comprobar que ningún borrador es facturable sin aprobación de oficina."
+    ],
+    "evidence": [],
+    "notes": "El umbral se define en implementación; ver docs/risks-and-open-questions.md."
+  },
+  {
+    "id": "technician-part-close",
+    "area": "partes",
+    "title": "Cierre del parte por el técnico",
+    "user_visible_behavior": "El técnico cierra el parte y este pasa a pendiente de aprobación por la oficina.",
+    "depends_on": [
+      "technician-part-creation",
+      "part-material-lines"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Cerrar un parte completo y comprobar el estado pendiente de aprobación.",
+      "Intentar cerrar sin hora de fin o sin descripción y recibir un error.",
+      "Comprobar que un parte cerrado ya no es editable por el técnico."
+    ],
+    "evidence": [],
+    "notes": "Solo los partes aprobados son facturables; ver docs/domain-model.md."
+  },
+  {
+    "id": "office-part-approval",
+    "area": "partes",
+    "title": "Aprobación de partes por la oficina",
+    "user_visible_behavior": "La oficina revisa un parte, ajusta horas con justificación si hace falta y lo aprueba o lo devuelve al técnico.",
+    "depends_on": [
+      "technician-part-close",
+      "role-based-permissions"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Aprobar un parte y comprobar que pasa a facturable.",
+      "Devolverlo y comprobar que vuelve a edición del técnico.",
+      "Ajustar horas con justificación y comprobar la entrada de auditoría."
+    ],
+    "evidence": [],
+    "notes": "La tarifa aplicable se congela al aprobar; ver docs/domain-model.md."
+  },
+  {
+    "id": "invoice-draft",
+    "area": "billing",
+    "title": "Borrador de factura de un aviso",
+    "user_visible_behavior": "La oficina genera un borrador de factura con los partes aprobados de un aviso, mano de obra, materiales e IVA.",
+    "depends_on": [
+      "office-part-approval",
+      "company-billing-settings",
+      "client-records"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Generar el borrador de un aviso con varios partes y comprobar horas y materiales.",
+      "Comprobar la tarifa por cliente y el fallback a la tarifa de empresa.",
+      "Verificar base, IVA y total al céntimo; bloquear si hay partes sin aprobar."
+    ],
+    "evidence": [],
+    "notes": "Una factura por aviso; ver docs/build-brief.md."
+  },
+  {
+    "id": "invoice-signed-pdf",
+    "area": "billing",
+    "title": "Emisión de factura firmada en PDF",
+    "user_visible_behavior": "La oficina emite el borrador como factura firmada con certificado de plataforma, con PDF inmutable y huella registrada.",
+    "depends_on": [
+      "invoice-draft"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Emitir una factura y comprobar estado Emitida y número consumido.",
+      "Descargar el PDF y verificar la firma y la huella.",
+      "Comprobar que una factura emitida no se puede editar."
+    ],
+    "evidence": [],
+    "notes": "Modo NO-VERIFACTU con registro firmado; requisitos pendientes de gestoría en docs/risks-and-open-questions.md."
+  },
+  {
+    "id": "invoice-annulment",
+    "area": "billing",
+    "title": "Anulación de una factura emitida",
+    "user_visible_behavior": "La oficina anula una factura emitida con motivo, conserva el registro y no reutiliza el número.",
+    "depends_on": [
+      "invoice-signed-pdf"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Anular una factura emitida y comprobar el estado Anulada.",
+      "Comprobar que el PDF y la huella se conservan.",
+      "Emitir otra factura y verificar que el número anulado no se reutiliza."
+    ],
+    "evidence": [],
+    "notes": "Sin rectificativas en el MVP; ver docs/build-brief.md."
+  },
+  {
+    "id": "client-invoice-access",
+    "area": "billing",
+    "title": "Facturas visibles en el portal de cliente",
+    "user_visible_behavior": "El usuario de cliente ve y descarga solo las facturas de su cliente.",
+    "depends_on": [
+      "invoice-signed-pdf",
+      "client-portal-invitation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Abrir el portal y comprobar el listado de facturas propias.",
+      "Descargar el PDF de una factura.",
+      "Intentar descargar la factura de otro cliente y recibir 403."
+    ],
+    "evidence": [],
+    "notes": "El cliente no ve partes internos; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "monthly-plan-invoice-batch",
+    "area": "billing",
+    "title": "Generación mensual de cuotas de plan",
+    "user_visible_behavior": "El superadmin lanza la generación mensual y se emite una factura firmada por cada empresa activa.",
+    "depends_on": [
+      "invoice-signed-pdf",
+      "superadmin-company-plan"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Generar el lote de un periodo con dos empresas activas y una suspendida.",
+      "Comprobar importes, IVA y PDF firmado de cada cuota.",
+      "Repetir la generación y verificar que no se duplican facturas."
+    ],
+    "evidence": [],
+    "notes": "Plan fijo mensual; ver docs/build-brief.md y docs/domain-model.md."
+  },
+  {
+    "id": "user-deactivation",
+    "area": "operations",
+    "title": "Desactivación segura de usuarios",
+    "user_visible_behavior": "El administrador desactiva un usuario, se revocan sus sesiones y sus avisos abiertos vuelven a la bolsa.",
+    "depends_on": [
+      "role-based-permissions",
+      "office-aviso-assignment"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Desactivar un técnico y comprobar que no puede iniciar sesión.",
+      "Comprobar que sus avisos abiertos vuelven a la bolsa.",
+      "Comprobar que sus partes históricos se conservan."
+    ],
+    "evidence": [],
+    "notes": "La desactivación no borra datos; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "audit-trail-view",
+    "area": "operations",
+    "title": "Consulta del registro de auditoría",
+    "user_visible_behavior": "El administrador ve las acciones sensibles de su empresa y el superadmin ve las de todas las empresas.",
+    "depends_on": [
+      "office-part-approval",
+      "invoice-signed-pdf",
+      "monthly-plan-invoice-batch",
+      "user-deactivation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Realizar una aprobación, una emisión y una desactivación y verlas en auditoría.",
+      "Filtrar por empresa, actor y tipo de acción.",
+      "Comprobar que un usuario sin permiso no accede al registro."
+    ],
+    "evidence": [],
+    "notes": "El acceso del superadmin a datos operativos también se registra; ver docs/user-and-access-model.md."
+  },
+  {
+    "id": "superadmin-tenant-view",
+    "area": "operations",
+    "title": "Vista operativa de empresas para el superadmin",
+    "user_visible_behavior": "El superadmin lista las empresas y abre una vista de solo lectura de sus avisos, partes y facturas.",
+    "depends_on": [
+      "client-invoice-access",
+      "monthly-plan-invoice-batch"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Abrir la vista de una empresa y comprobar avisos, partes y facturas.",
+      "Comprobar que la vista es de solo lectura.",
+      "Verificar que el acceso queda registrado en auditoría."
+    ],
+    "evidence": [],
+    "notes": "Decisión de producto: acceso total del proveedor; ver docs/user-and-access-model.md y docs/risks-and-open-questions.md."
+  },
+  {
+    "id": "demo-seed-data",
+    "area": "demo",
+    "title": "Datos sembrados para la demo interna",
+    "user_visible_behavior": "Un comando idempotente crea dos empresas con clientes, avisos, partes y facturas listos para la demo.",
+    "depends_on": [
+      "ai-part-draft",
+      "client-invoice-access",
+      "monthly-plan-invoice-batch",
+      "audit-trail-view",
+      "superadmin-tenant-view"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Ejecutar el seed dos veces y comprobar que no duplica datos.",
+      "Recorrer el guion de demo de docs/build-brief.md con los datos sembrados.",
+      "Comprobar que hay al menos una foto de parte y una factura firmada."
+    ],
+    "evidence": [],
+    "notes": "Datos ficticios; no usar datos reales de clientes. Ver docs/build-brief.md."
+  }
+]
