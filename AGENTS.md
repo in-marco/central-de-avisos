@@ -116,6 +116,21 @@ el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.
 No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
 `& "C:\Program Files\Git\bin\bash.exe" init.sh`.
 
+## Validation Hygiene
+
+- No usar `npm run dev` para validar. Arrancar `next start` en un puerto libre,
+  por defecto 3100, y comprobar antes que el puerto no está ocupado.
+- No reutilizar servidores de otros roles ni dejar procesos vivos entre pasos.
+- Usar `curl --max-time 10` en todas las comprobaciones HTTP.
+- Preferir `bash scripts/validate-smoke.sh` en Git Bash: arranca el servidor,
+  comprueba rutas públicas y privadas, y limpia procesos y cookies. Admite
+  `SMOKE_EMAIL`/`SMOKE_PASSWORD` y `SMOKE_NORMAL_EMAIL`/`SMOKE_NORMAL_PASSWORD`
+  para las comprobaciones autenticadas.
+- Al terminar, matar el árbol de procesos y verificar que el puerto queda libre.
+- No dejar cookies, logs, perfiles de navegador ni bases de verificación. Las
+  pruebas de integración usan una base separada que se elimina al terminar;
+  `central_de_avisos` conserva sus datos demo.
+
 ## Definition Of Done
 
 Una feature está terminada solo si:

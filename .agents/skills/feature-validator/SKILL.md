@@ -85,6 +85,18 @@ Use this hierarchy:
 
 If the repo has a persistent E2E command and the feature changes user-visible behavior, authentication, authorization, routing, or API flows, verify that focused E2E coverage was added/updated or that the spec/implementation gives a credible reason it was not needed. Missing relevant E2E coverage is normally a `revise` finding once the E2E harness exists.
 
+### Runtime Hygiene
+
+Long validations usually lose time to leftover servers and ports, not to the test suite.
+
+- Do not use `npm run dev` for validation. Start `next start` on a known free port, usually 3100, in the background with output redirected to a log.
+- Check that the port is free before starting. If it is occupied by a project server left by another role, stop that process tree or choose another port.
+- Use `curl --max-time` on every HTTP request.
+- Prefer `scripts/validate-smoke.sh` when present; it starts the server, runs the public and optional authenticated checks, and cleans up processes and cookies.
+- Stop the server process tree at the end and verify the port is no longer listening.
+- Do not leave cookies, logs, temporary browser profiles, verification databases, or seeded smoke data behind. Drop verification databases and restore the main development database to its expected demo counts.
+- If a check is skipped or not rerun, say so explicitly instead of repeating expensive setup.
+
 ### 4. Review Quality And Risk
 
 Use `references/validation-rubric.md` to evaluate:
