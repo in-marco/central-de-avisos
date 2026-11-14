@@ -54,6 +54,10 @@
 - **Mala calidad de los manuscritos:** la precisión puede no alcanzar el 80 %. Mitigación: conjunto de prueba real y fallback manual.
 - **Adopción por técnicos:** formularios largos en campo. Mitigación: diseño móvil con controles grandes y mínimos campos obligatorios.
 - **Confidencialidad:** el acceso total del proveedor puede ser un obstáculo comercial. Mitigación: auditoría de accesos y opción futura de restricción.
+- **Fuerza bruta en el login:** el slice actual usa error genérico, hash dummy y scrypt costoso, pero no tiene rate limiting durable. Mitigación pendiente: limitador en edge/WAF o base de datos antes de exponer el login fuera de demo/producción.
+- **Sesiones acumuladas:** no hay limpieza programada de sesiones caducadas/revocadas. Mitigación pendiente: job o índice de mantenimiento; el índice por `expira_en` ya está creado.
+- **Credenciales de seed:** las contraseñas demo viven en `.env` local y `.env.example`. Mitigación: son solo locales, el seed rechaza producción y `.env` está ignorado; no reutilizarlas.
+- **CSRF y open redirect:** login/logout son POST con comprobación de `Origin` cuando llega, `SameSite=Lax` y `next` validado. Riesgo residual: un proxy que no normalice cabeceras `x-forwarded-*` debe revisarse al desplegar.
 
 ## Research Tasks
 
@@ -69,3 +73,5 @@
 - **ORM:** Prisma 7.10.1 con migraciones SQL versionadas; decisión registrada en `ARCHITECTURE.md` y `docs/technical-discovery.md`.
 - **Aislamiento inicial:** filtros de aplicación obligatorios con `tenantFilter`/`requireEmpresaId`/`assertTenantAccess`; RLS diferida con riesgo y trigger registrados. Ver `CONSTRAINTS.md`.
 - **Desarrollo local:** PostgreSQL nativo 18.7; no se requiere Docker en este repositorio.
+- **Autenticación:** sesión propia opaca en PostgreSQL, sin Auth.js; scrypt nativo versionado, cookie `HttpOnly`/`SameSite=Lax` de 12 h, revocación por logout y validación de usuario/empresa en cada petición. Ver `ARCHITECTURE.md` y `CONSTRAINTS.md`.
+- **Seed local:** `tsx` 4.23.15 + `prisma/seed.ts`, idempotente con `upsert`, rechaza producción y no entra en `init.sh`.

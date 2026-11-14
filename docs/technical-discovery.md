@@ -14,7 +14,7 @@
 - **Base de datos:** PostgreSQL gestionado.
 - **ORM:** Prisma 7 con el generador `prisma-client`, driver adapter `@prisma/adapter-pg` y migraciones SQL versionadas.
 - **UI:** Tailwind CSS con componentes accesibles; seguir `DESIGN.md`.
-- **Auth:** email y contraseña con invitaciones, sesiones seguras y recuperación de contraseña.
+- **Auth:** propia, con email y contraseña, sesiones opacas en PostgreSQL y hash scrypt versionado; sin Auth.js. Invitaciones, roles y recuperación de contraseña llegan en features posteriores.
 - **PDF:** generación server-side de facturas.
 - **Almacenamiento:** object storage europeo para fotos y PDFs.
 - **IA:** proveedor cloud con capa de abstracción; salida JSON validada por esquema.
@@ -40,11 +40,22 @@
 
 ## Authentication and Authorization
 
-- Invitaciones por email; email único global.
-- Roles combinables: administrador, oficina, técnico, cliente; superadmin separado.
-- Comprobación de tenant y permisos en servidor en cada petición.
-- Sesiones revocables al desactivar un usuario o suspender una empresa.
-- Acceso del superadmin registrado en auditoría.
+- Implementado: login con email y contraseña, email único global y sin
+  autoregistro.
+- **Sesión propia, no Auth.js:** token opaco de 32 bytes; en `sesiones` solo se
+  guarda SHA-256. Cookie `central_sesion` `HttpOnly`/`SameSite=Lax`/12 h.
+- **Contraseñas:** scrypt nativo versionado (`N=131072,r=8,p=1`), salt aleatorio
+  y `timingSafeEqual`. Argon2id nativo se descarta por riesgo de binarios en
+  Node 26/Windows; el formato versionado permite migrar después.
+- **Revocación:** logout marca `revocada_en`; usuario `INACTIVO`, empresa
+  `SUSPENDIDA` y sesión caducada/revocada no autentican en cada petición.
+- **Rutas:** `requireSession` en layouts/páginas privados; sin middleware como
+  autorización. Login/logout son `POST`, con same-origin y `next` validado.
+- **Pendiente:** rate limiting durable, limpieza programada de sesiones y
+  auditoría de accesos. Las invitaciones y los roles combinables siguen fuera de
+  este slice.
+- Planificado: invitaciones por email, roles administrador/oficina/técnico/
+  cliente, superadmin separado y auditoría del acceso del proveedor.
 
 ## Deployment and Operations
 
@@ -58,8 +69,9 @@
 
 - **Unitarias:** cálculo de horas, ajustes justificados, totales, IVA, numeración y máquina de estados. `npm test` no usa base de datos.
 - **Integración:** esquema, constraints, FKs, aislamiento entre empresas, aprobación → factura, anulación y generación mensual. `npm run test:db` usa PostgreSQL real y transacciones con rollback.
-- **E2E:** ciclo completo con Playwright, incluida subida de foto de parte manuscrito y descarga de PDF.
-- **Seguridad:** pruebas de autorización por rol y por tenant; ninguna ruta debe confiar en el cliente.
+- **E2E:** ciclo completo con Playwright en el primer flujo con interacción de cliente (bandeja/parte del técnico). En este slice, login → `/panel` → logout se verifica con HTTP real, cookie jar y comprobación de layout/teclado en navegador headless; Playwright no se añade todavía y no debe exigir base de datos en `init.sh`.
+- **Seed:** `tsx` 4.23.15 ejecuta `prisma/seed.ts`; es idempotente, lee `SEED_*` y rechaza producción. No se ejecuta en el gate.
+- **Seguridad:** pruebas de autenticación, revocación y aislamiento; ninguna ruta debe confiar en el cliente.
 - **Fiscal:** verificar firma y huella de cada PDF generado.
 
 ## Observability
@@ -92,3 +104,11 @@
 - **Prisma 7 no carga `.env` automáticamente** y exige driver adapter. La URL
   vive en `prisma.config.ts` y `PrismaClient` se crea con
   `@prisma/adapter-pg`.
+- **Sesión propia en PostgreSQL, sin Auth.js:** permite revocar en servidor,
+  soportar superadmin sin empresa y preparar invitaciones/roles sin añadir una
+  dependencia de auth no verificada. Ver `ARCHITECTURE.md` y `CONSTRAINTS.md`.
+- **scrypt nativo versionado:** sin dependencias nativas adicionales; coste
+  medido localmente ~0,24 s por hash con `N=131072,r=8,p=1`. El formato permite
+  rehash futuro.
+- **Rate limiting diferido:** no se añade un limitador en memoria; debe
+  resolverse en edge/WAF o base de datos antes de producción.

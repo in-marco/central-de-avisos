@@ -45,6 +45,41 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** solo un usuario `es_superadmin = true` puede tener `empresa_id`
   nulo. Motivo: coherencia de pertenencia y scoping.
 
+## Autenticación y sesiones
+
+- **MUST** toda ruta o layout privado ejecuta `requireSession` en servidor.
+  Motivo: no hay middleware/proxy que pueda validar la sesión de base de datos.
+- **MUST NOT** usar `middleware.ts`/`proxy.ts` como frontera de autorización.
+  Motivo: es fácil de eludir y no consulta la sesión real.
+- **MUST** la cookie `central_sesion` es `HttpOnly`, `SameSite=Lax`, `Path=/`,
+  `Max-Age=43200` y `Secure` cuando la petición es HTTPS. Motivo: reducir
+  exposición del token y fijar una duración absoluta de 12 h.
+- **MUST** en base de datos se guarda solo el SHA-256 del token, nunca el token
+  crudo. Motivo: una fuga de `sesiones` no debe permitir reutilizar sesiones.
+- **MUST** cada petición privada comprueba sesión no revocada, no caducada,
+  usuario `ACTIVO` y empresa `ACTIVA` (o superadmin con `empresa_id` nulo).
+  Motivo: desactivar un usuario o suspender una empresa debe cortar el acceso
+  de inmediato.
+- **MUST** las contraseñas se guardan con el formato scrypt versionado y se
+  comparan con `timingSafeEqual`; login devuelve siempre el mismo error
+  genérico para credenciales, email inexistente, invitado sin contraseña,
+  usuario inactivo o empresa suspendida. Motivo: evitar enumeración y permitir
+  rehash futuro.
+- **MUST NOT** registrar email, contraseña, token ni hash en logs. Motivo:
+  secretos y datos personales.
+- **MUST** el login busca por email único global y la sesión por `token_hash`
+  con el cliente explícito; son excepciones acotadas de identidad, no consultas
+  de dominio y no llevan `tenantFilter`. Motivo: la identidad precede al tenant.
+- **MUST** login y logout son `POST`, comprueban mismo origen cuando llega
+  `Origin` y validan `next` contra open redirects. Motivo: CSRF y redirecciones
+  seguras.
+- **MUST** el seed usa `SEED_*` locales, es idempotente, rechaza producción y
+  no se ejecuta en `init.sh`. Motivo: evitar credenciales reales o datos demo
+  en el gate o en producción.
+- **MUST** añadir rate limiting durable (edge/WAF o base de datos) antes de
+  exponer el login fuera de demo/producción. Motivo: el slice actual solo
+  mitiga fuerza bruta con error genérico, hash dummy y coste de scrypt.
+
 ## Cliente Prisma y entorno
 
 - **MUST** `PrismaClient` se crea solo con `@prisma/adapter-pg` y

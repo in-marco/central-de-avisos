@@ -57,10 +57,14 @@ $env:Path = "C:\Program Files\nodejs;" + $env:Path
 PostgreSQL local (no se requiere Docker en este repositorio):
 
 ```bash
-cp .env.example .env   # ajustar DATABASE_URL si hace falta
+cp .env.example .env   # ajustar DATABASE_URL y SEED_* si hace falta
 npm run db:deploy      # aplica migraciones
 npm run db:status      # comprueba el historial
+npm run db:seed        # datos demo locales (idempotente, nunca en producción)
 ```
+
+`db:seed` usa `tsx` y variables `SEED_ADMIN_*`/`SEED_SUPERADMIN_*`; no forma
+parte de `init.sh` ni del gate.
 
 Instalación y gate estándar (no necesita base de datos):
 
@@ -89,12 +93,20 @@ npm run dev
 ```
 
 - Home: `http://localhost:3000/`
+- Login: `http://localhost:3000/login`
+- Panel privado: `http://localhost:3000/panel` (requiere sesión)
 - Salud: `http://localhost:3000/health` (200 si PostgreSQL responde; 503
   `degraded` si no, sin filtrar credenciales)
 
+Las credenciales de ejemplo del seed son solo locales y viven en `.env`; nunca
+se commitean. La autenticación es propia (sin Auth.js): cookie
+`central_sesion` de 12 h, sesión revocable y `requireSession` en las rutas
+privadas.
+
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
-el gate completo; no arranca PostgreSQL ni el servidor de desarrollo. En Windows
-se ejecuta con Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`.
+el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.
+No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
+`& "C:\Program Files\Git\bin\bash.exe" init.sh`.
 
 ## Definition Of Done
 

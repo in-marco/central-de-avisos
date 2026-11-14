@@ -1,21 +1,25 @@
 # Architecture
 
-Estado actual: fundamento técnico. La app es un monolito Next.js con App Router
-y una única superficie de datos PostgreSQL. No hay autenticación, roles ni
-dominio funcional todavía.
+Estado actual: fundamento técnico con autenticación propia. La app es un
+monolito Next.js con App Router y una única superficie de datos PostgreSQL.
+Existe login con email y contraseña, sesiones opacas revocables y una ruta
+privada mínima; todavía no hay roles ni dominio funcional.
 
 ## Capas y dirección de dependencias
 
 ```txt
 src/app/          rutas HTTP y páginas (borde de entrada)
-  └─ src/lib/     lógica de aplicación testeable sin servidor
-       └─ src/db/ acceso a datos y contrato de tenant
-            └─ src/generated/prisma/ cliente Prisma generado (no versionado)
+  ├─ src/lib/     lógica de aplicación testeable sin servidor
+  │    └─ src/lib/auth/  autenticación y sesiones (server-only en current-session)
+  └─ src/db/      acceso a datos y contrato de tenant
+       └─ src/generated/prisma/ cliente Prisma generado (no versionado)
 ```
 
 - `src/db/client.ts` es el único punto de construcción del cliente Prisma.
 - `src/lib/` no importa rutas de `src/app/`; las rutas dependen de `src/lib/`.
 - El cliente generado se regenera con `npm run db:generate` y no se commitea.
+- La lógica de credenciales y sesiones recibe el cliente Prisma explícito para
+  poder probarse con transacciones y rollback.
 
 ## Base de datos
 
@@ -47,9 +51,13 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   con `ON DELETE/UPDATE RESTRICT`, estado `ACTIVA`/`SUSPENDIDA` e índice por
   plan.
 - `usuarios`: email único global, `empresa_id` nullable con FK `Restrict`,
-  estado `ACTIVO`/`INACTIVO`, `es_superadmin` e índice por empresa. Los CHECK
+  `password_hash` nullable (invitados sin contraseña), estado
+  `ACTIVO`/`INACTIVO`, `es_superadmin` e índice por empresa. Los CHECK
   garantizan email normalizado y que solo el superadmin tenga `empresa_id`
   nulo.
+- `sesiones`: sesión opaca con FK `CASCADE` a `usuarios`, `token_hash` único,
+  `creado_en`, `expira_en` y `revocada_en` nullable; índices por usuario y
+  expiración y CHECK `expira_en > creado_en`. El token crudo nunca se guarda.
 
 ## Aislamiento multiempresa
 
@@ -69,6 +77,34 @@ RLS se difiere hasta que exista autenticación y una revisión específica. El
 motivo y el riesgo residual están en `CONSTRAINTS.md` y
 `docs/risks-and-open-questions.md`.
 
+## Autenticación y sesiones
+
+La autenticación es propia; no se usa Auth.js. El objetivo es una sesión
+opaca, persistida y revocable en servidor, compatible con el superadmin sin
+empresa y con las futuras invitaciones y roles.
+
+- **Contraseñas:** scrypt nativo versionado
+  (`scrypt$v=1$N=131072,r=8,p=1$...`) con salt aleatorio y
+  `timingSafeEqual`. Un email inexistente o un usuario sin `password_hash` se
+  verifica contra un hash dummy para no revelar el motivo por tiempo.
+- **Sesión:** token aleatorio de 32 bytes en `base64url`; en `sesiones` solo se
+  guarda su SHA-256. La cookie `central_sesion` es `HttpOnly`,
+  `SameSite=Lax`, `Path=/`, `Max-Age=43200` (12 h absolutas) y añade `Secure`
+  cuando la petición llega por HTTPS.
+- **Validación:** en cada petición privada se consulta la sesión con usuario y
+  empresa. Una sesión caducada, revocada, con usuario `INACTIVO` o con empresa
+  `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
+- **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth; privada
+  `/panel`. El layout y la página privada llaman a `requireSession`, que
+  redirige a `/login?next=...` si no hay sesión. `getCurrentSession` usa
+  `cookies()` (asíncrona) y `cache()` de React.
+- **Frontera de seguridad:** no hay middleware/proxy de autorización. Cada
+  layout o página privada debe ejecutar `requireSession` en servidor; el
+  middleware no puede validar de forma fiable una sesión de base de datos.
+- **Login/logout:** `POST` con `application/x-www-form-urlencoded`, comprobación
+  de mismo origen cuando llega `Origin`, 303 y `next` validado para evitar open
+  redirects. Logout marca `revocada_en` y borra la cookie.
+
 ## Salud
 
 `GET /health` es dinámico y público. Ejecuta `SELECT 1` con timeout de 2 s y
@@ -83,7 +119,11 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
 
 - `npm test`: unitarios, sin base de datos. Excluye `*.db.test.ts`.
 - `npm run test:db`: migra y ejecuta tests de integración reales en serie,
-  dentro de transacciones con rollback. Cubre constraints, FKs y aislamiento
-  entre dos empresas.
+  dentro de transacciones con rollback. Cubre constraints, FKs, aislamiento
+  entre dos empresas y autenticación/sesiones (credenciales, estados, caducidad,
+  revocación, logout y superadmin).
+- `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
+  Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
+  `init.sh` ni del gate.
 - `npm run lint`, `npm run typecheck`, `npm run build` e `init.sh` deben pasar
   sin PostgreSQL y sin `DATABASE_URL`.

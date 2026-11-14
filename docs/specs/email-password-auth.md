@@ -95,7 +95,7 @@ para operar con seguridad y poder cerrar sesión dejando de tener acceso.
 
 2. **Hash de contraseña: scrypt nativo versionado.** `src/lib/auth/password.ts` expone `hashPassword`/`verifyPassword` con `scrypt`, salt aleatorio de 16 bytes, clave de 64 bytes, `N=2^17`, `r=8`, `p=1`, `maxmem` 256 MiB y `timingSafeEqual`. Formato `scrypt$v=1$N=131072,r=8,p=1$<salt_b64url>$<hash_b64url>` para permitir rehash futuro (p. ej. Argon2id). Se limita la contraseña a 128 caracteres y el email a 254. Para email inexistente o sin hash se verifica contra un hash dummy válido y se devuelve el mismo error genérico, evitando enumeración evidente. Argon2id nativo se descarta por riesgo de binarios/prebuilds no verificados en Node 26/Windows; scrypt es aceptado por OWASP y no requiere dependencia.
 
-3. **Esquema y migración.** `Usuario` gana `passwordHash String? @map("password_hash")`: nullable para invitados creados antes de definir contraseña; login lo trata como credencial inválida. Nueva tabla `sesiones` (`id` UUID, `usuario_id` FK `ON DELETE CASCADE`, `token_hash` único, `creada_en`, `expira_en`, `revocada_en` nullable; índices por usuario y expiración; CHECK `expira_en > creada_en`). CASCADE solo afecta a sesiones; los usuarios no se borran en el MVP. Migración SQL versionada con `npm run db:migrate -- --name auth-sessions`; nunca `db push`. Actualizar `schema.db.test.ts` para incluir `sesiones` y columnas nuevas.
+3. **Esquema y migración.** `Usuario` gana `passwordHash String? @map("password_hash")`: nullable para invitados creados antes de definir contraseña; login lo trata como credencial inválida. Nueva tabla `sesiones` (`id` UUID, `usuario_id` FK `ON DELETE CASCADE`, `token_hash` único, `creado_en` (campo Prisma `creadaEn`), `expira_en`, `revocada_en` nullable; índices por usuario y expiración; CHECK `expira_en > creado_en`). CASCADE solo afecta a sesiones; los usuarios no se borran en el MVP. Migración SQL versionada con `npm run db:migrate -- --name auth_sessions`; nunca `db push`. Actualizar `schema.db.test.ts` para incluir `sesiones` y columnas nuevas.
 
 4. **Sesión y cookie.** Token de 32 bytes `base64url`; en BD solo SHA-256 hex (`token_hash`), nunca el token crudo. Cookie `central_sesion`: `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=43200` (12 h absolutas, sin renovación deslizante), `Secure` cuando la petición llega por HTTPS (`x-forwarded-proto`/URL), no solo por `NODE_ENV`, para que `next start` local funcione. La BD manda: una cookie con sesión revocada, expirada, usuario inactivo o empresa suspendida no autentica. Logout marca `revocada_en` y borra la cookie. Se permiten sesiones concurrentes; el logout revoca solo la actual; la desactivación futura revocará todas.
 
@@ -162,17 +162,27 @@ para operar con seguridad y poder cerrar sesión dejando de tener acceso.
 
 ## Implementation Tasks
 
-- [ ] Leer la documentación de Next.js 16 instalada y registrar las APIs usadas.
-- [ ] Crear `password.ts` (scrypt, normalización, hash dummy), `session-token.ts`, `redirect.ts` y `origin.ts`; tests unitarios.
-- [ ] Añadir `password_hash` y `sesiones` al esquema y generar la migración `auth_sessions`.
-- [ ] Actualizar `schema.db.test.ts` para la cuarta tabla, columna, FK e índices.
-- [ ] Implementar `session.ts` y `current-session.ts` con validación de usuario/empresa y `requireSession`.
-- [ ] Crear `/api/auth/login` y `/api/auth/logout` con POST, same-origin, 303 y cookie.
-- [ ] Crear `/login` y `/panel` con diseño accesible; enlazar desde la home.
-- [ ] Añadir seed idempotente y `npm run db:seed`; documentar variables `SEED_*`.
-- [ ] Escribir `auth.db.test.ts` con rollback y cubrir todos los escenarios.
-- [ ] Ejecutar `db:deploy`, `test:db`, gate, `init.sh` sin BD y smoke HTTP con `curl`.
-- [ ] Actualizar documentación durable, `PROGRESS.md` y `feature_list.json` con evidencia.
+- [x] Leer la documentación de Next.js 16 instalada y registrar las APIs usadas.
+- [x] Crear `password.ts` (scrypt, normalización, hash dummy), `session-token.ts`, `redirect.ts` y `origin.ts`; tests unitarios.
+- [x] Añadir `password_hash` y `sesiones` al esquema y generar la migración `auth_sessions`.
+- [x] Actualizar `schema.db.test.ts` para la cuarta tabla, columna, FK e índices.
+- [x] Implementar `session.ts` y `current-session.ts` con validación de usuario/empresa y `requireSession`.
+- [x] Crear `/api/auth/login` y `/api/auth/logout` con POST, same-origin, 303 y cookie.
+- [x] Crear `/login` y `/panel` con diseño accesible; enlazar desde la home.
+- [x] Añadir seed idempotente y `npm run db:seed`; documentar variables `SEED_*`.
+- [x] Escribir `auth.db.test.ts` con rollback y cubrir todos los escenarios.
+- [x] Ejecutar `db:deploy`, `test:db`, gate, `init.sh` sin BD y smoke HTTP con `curl`.
+- [x] Actualizar documentación durable, `PROGRESS.md` y `feature_list.json` con evidencia.
+
+## Implementation Findings
+
+- **Columna física de creación:** Prisma mapea el campo `creadaEn` a `creado_en`, no a `creada_en`. La primera versión del CHECK usaba `creada_en` y `db:deploy` falló con `42703`; se corrigió la migración, se marcó la migración fallida como `rolled-back`, se limpiaron las DDL parciales y se reaplicó desde una base vacía. `schema.db.test.ts` comprueba el nombre físico `creado_en`.
+- **Coste de scrypt:** con `N=131072,r=8,p=1,maxmem=256 MiB`, el equipo local tarda ~0,24 s por hash. Los tests unitarios de auth tardan ~1,4 s y `test:db` completo ~5,4 s con 31 tests; no fue necesario bajar el coste.
+- **Next.js 16 confirmado:** `cookies()` es asíncrona, `searchParams` es `Promise`, `redirect()` en layouts/pages produce 307 y los route handlers permiten 303 + `Set-Cookie`. Las páginas privadas y `/login` usan `dynamic = "force-dynamic"` para que el build no consulte la base.
+- **`tsx`:** 4.23.15 funciona con el cliente Prisma generado y el alias `@/` del `tsconfig`. npm 11.20 avisa de install scripts no aprobados, pero el seed y los tests se ejecutaron correctamente.
+- **Revisión a 390 px:** con Edge headless y CDP se comprobó que `/login` y `/panel` no tienen scroll horizontal, los controles principales miden 48 px de alto y el orden de tabulación es email → contraseña → Entrar → Volver. Se detectó que `outline-none` anulaba el anillo de foco de los inputs; se retiró y ahora el foco por teclado muestra un anillo sólido de 2 px en latón.
+- **Superadmin en UI:** el seed usa el nombre “Superadmin Demo” y el panel muestra “Proveedor SaaS” como ámbito; así no se repite la misma etiqueta como nombre y empresa.
+- **`server-only`:** el paquete no está instalado y no se añadió. `current-session.ts` es código de servidor por ubicación y por uso de `next/headers`; no se importa desde componentes de cliente.
 
 ## Verification Plan
 

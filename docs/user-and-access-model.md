@@ -58,6 +58,19 @@ Notas:
 - El técnico solo puede registrar horas en nombre propio; la oficina puede crear o corregir en nombre de un técnico.
 - El superadmin puede consultar cualquier empresa; sus accesos quedan en auditoría.
 
+## Comportamiento implementado en este slice
+
+- Login con email y contraseña; no hay autoregistro ni invitaciones todavía.
+- La sesión es opaca, absoluta y dura 12 h; no se renueva de forma deslizante.
+  Se permiten sesiones concurrentes y el logout revoca solo la actual.
+- Cada petición privada valida la sesión en base de datos y comprueba que el
+  usuario siga `ACTIVO` y su empresa `ACTIVA`. Suspender la empresa o
+  desactivar al usuario invalida sus sesiones existentes.
+- El superadmin usa el mismo flujo con `empresa_id` nulo y `es_superadmin =
+  true`; el panel muestra “Proveedor SaaS” en lugar de empresa.
+- Roles combinables, permisos por rol, invitaciones, recuperación de contraseña
+  y revocación masiva quedan fuera de esta feature.
+
 ## Revocation / Expiry
 
 - Desactivar un usuario invalida sus sesiones y le impide entrar.

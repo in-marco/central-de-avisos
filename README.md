@@ -3,9 +3,10 @@
 Central de avisos para empresas de servicios con técnicos de campo: avisos,
 partes y facturación en modo NO-VERIFACTU firmado (MVP).
 
-Estado actual: fundamento técnico. La app Next.js arranca, PostgreSQL está
-conectado mediante Prisma y existen las tablas base `planes`, `empresas` y
-`usuarios`. Todavía no hay autenticación ni dominio funcional.
+Estado actual: fundamento técnico con autenticación propia. La app Next.js
+arranca, PostgreSQL está conectado mediante Prisma y existen login con email y
+contraseña, sesiones revocables y un panel privado mínimo. Todavía no hay roles
+ni dominio funcional.
 
 ## Requisitos
 
@@ -71,9 +72,37 @@ Otros comandos:
 | `npm run db:deploy` | Aplica migraciones pendientes (camino compartido). |
 | `npm run db:status` | Muestra el estado del historial. |
 | `npm run db:reset` | Reconstruye la base local desde cero. |
+| `npm run db:seed` | Crea datos demo locales idempotentes (nunca en producción). |
 | `npm run test:db` | Migra y ejecuta tests de integración reales. |
 
 No usar `prisma db push` para cambios compartidos; ver `CONSTRAINTS.md`.
+
+## Autenticación local
+
+Tras aplicar las migraciones, crea los datos demo:
+
+```bash
+npm run db:seed
+```
+
+El seed usa `tsx`, es idempotente y lee `SEED_ADMIN_*` y
+`SEED_SUPERADMIN_*` de `.env`. Rechaza ejecutarse con `NODE_ENV=production`.
+Las contraseñas de ejemplo de `.env.example` son solo para desarrollo local:
+cámbialas en tu `.env` y no las reutilices fuera de local.
+
+Con el seed aplicado, los usuarios demo son `admin@demo.local` (empresa) y
+`superadmin@demo.local` (proveedor SaaS). Inicia sesión en
+<http://localhost:3000/login> y abre <http://localhost:3000/panel>.
+
+- La cookie `central_sesion` es `HttpOnly`, `SameSite=Lax`, dura 12 h y solo se
+  guarda hasheada en la tabla `sesiones`.
+- `POST /api/auth/logout` revoca la sesión actual y borra la cookie.
+- `/panel` exige sesión en servidor; sin sesión redirige a
+  `/login?next=%2Fpanel`.
+- Un usuario `INACTIVO`, una empresa `SUSPENDIDA`, una sesión caducada o una
+  revocada no autentican.
+- El rate limiting durable queda pendiente antes de exponer el login fuera de
+  demo/producción; ver `docs/risks-and-open-questions.md`.
 
 ## Desarrollo
 
@@ -82,6 +111,8 @@ npm run dev
 ```
 
 - Home: <http://localhost:3000/>
+- Login: <http://localhost:3000/login>
+- Panel privado: <http://localhost:3000/panel> (requiere sesión)
 - Salud: <http://localhost:3000/health>
 
 `GET /health` comprueba PostgreSQL con un timeout de 2 s:
@@ -138,19 +169,27 @@ npm run test:db
 ```
 
 Se ejecutan en serie dentro de transacciones con rollback y cubren constraints,
-FKs y aislamiento entre dos empresas.
+FKs, aislamiento entre dos empresas y autenticación (credenciales correctas e
+incorrectas, email inexistente, usuario inactivo, empresa suspendida,
+superadmin, sesión caducada/revocada, logout y token hasheado).
 
 ## Estructura
 
 - `src/app/` — rutas de Next.js (App Router).
 - `src/app/health/route.ts` — endpoint `GET /health`.
+- `src/app/login/` — formulario de login server-rendered.
+- `src/app/panel/` — layout protegido y panel mínimo.
+- `src/app/api/auth/` — route handlers de login y logout (`POST`).
+- `src/lib/auth/` — hash scrypt, tokens, sesiones, cookie, same-origin y
+  validación de `next`.
 - `src/lib/health.ts` — construcción del payload de salud.
 - `src/lib/db-health.ts` — comprobación `SELECT 1` con timeout.
 - `src/db/client.ts` — cliente Prisma perezoso con driver adapter `pg`.
 - `src/db/tenant.ts` — contrato de aislamiento (`requireEmpresaId`,
   `tenantFilter`, `assertTenantAccess`).
 - `src/generated/prisma/` — cliente Prisma generado (ignorado por git).
-- `prisma/schema.prisma` — modelos base.
+- `prisma/schema.prisma` — modelos base y sesiones.
+- `prisma/seed.ts` — seed demo idempotente con `tsx`.
 - `prisma/migrations/` — migraciones SQL versionadas.
 - `prisma.config.ts` — configuración de Prisma 7 y URL de migración.
 

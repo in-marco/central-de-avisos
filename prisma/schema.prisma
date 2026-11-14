@@ -63,13 +63,31 @@ model Usuario {
   empresaId     String?       @map("empresa_id") @db.Uuid
   email         String        @unique
   nombre        String
+  passwordHash  String?       @map("password_hash")
   estado        EstadoUsuario @default(ACTIVO)
   esSuperadmin  Boolean       @default(false) @map("es_superadmin")
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  empresa Empresa? @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  empresa  Empresa? @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sesiones Sesion[]
 
   @@index([empresaId])
   @@map("usuarios")
+}
+
+// Sesión opaca y revocable. El token crudo nunca se guarda: solo su SHA-256.
+model Sesion {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  usuarioId  String    @map("usuario_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash")
+  creadaEn   DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  expiraEn   DateTime  @map("expira_en") @db.Timestamptz(3)
+  revocadaEn DateTime? @map("revocada_en") @db.Timestamptz(3)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([usuarioId])
+  @@index([expiraEn])
+  @@map("sesiones")
 }

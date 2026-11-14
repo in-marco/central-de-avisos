@@ -16,6 +16,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:status": "prisma migrate status",
     "db:reset": "prisma migrate reset --force",
+    "db:seed": "tsx prisma/seed.ts",
     "test:db": "prisma migrate deploy && vitest run --config vitest.db.config.ts",
     "postinstall": "prisma generate"
   },
@@ -36,6 +37,7 @@
     "eslint-config-next": "16.4.6",
     "prisma": "7.10.1",
     "tailwindcss": "4.3.5",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vite": "8.3.8",
     "vitest": "5.1.0"

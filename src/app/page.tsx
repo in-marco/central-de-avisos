@@ -14,12 +14,20 @@ export default function Home() {
           Base técnica de la central de avisos para empresas de servicios con
           técnicos de campo.
         </p>
-        <Link
-          className="mt-8 inline-flex h-11 items-center rounded-md bg-primary px-5 text-sm font-medium text-white transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          href="/health"
-        >
-          Ver estado del servicio
-        </Link>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Link
+            className="inline-flex h-12 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-white transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-11"
+            href="/login"
+          >
+            Iniciar sesión
+          </Link>
+          <Link
+            className="inline-flex h-12 items-center justify-center rounded-md border border-border px-5 text-sm font-medium text-primary transition-colors hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-11"
+            href="/health"
+          >
+            Ver estado del servicio
+          </Link>
+        </div>
       </section>
     </main>
   );

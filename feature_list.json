@@ -65,14 +65,29 @@
     "depends_on": [
       "database-foundation"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Iniciar sesión con un usuario sembrado y acceder a una ruta privada.",
       "Rechazar contraseña incorrecta y usuario inexistente.",
       "Cerrar sesión y comprobar que la ruta privada redirige al login."
     ],
-    "evidence": [],
-    "notes": "Email único global y sin autoregistro; ver docs/user-and-access-model.md."
+    "evidence": [
+      "Entorno: Windows, Node 26.13.1, npm 11.20.0, Next.js 16.4.6, Prisma 7.10.1, @prisma/adapter-pg 7.10.1, tsx 4.23.15 y PostgreSQL 18.7 nativo en localhost:5432. Sin Docker ni Auth.js.",
+      "Migración versionada 20261113235228_auth_sessions: añade usuarios.password_hash nullable, tabla sesiones con token_hash único, FK ON DELETE CASCADE, índices por usuario/expiración y CHECK sesiones_expiracion_posterior (expira_en > creado_en). Aplicada con npm run db:deploy en central_de_avisos y en una base vacía central_de_avisos_auth_verify; npm run db:status devolvió 'Database schema is up to date!' en ambas. No se usó db push.",
+      "Hallazgo de migración: Prisma mapea creadaEn a creado_en; el primer CHECK usaba creada_en y falló con 42703. Se corrigió la migración, se resolvió como rolled-back, se limpiaron las DDL parciales y se reaplicó desde base vacía.",
+      "npm run test:db: 3 archivos y 31 tests verdes (13 de auth, 15 de esquema y 3 de aislamiento) tanto en central_de_avisos como en la base de verificación vacía. Cubre credenciales válidas/incorrectas, email inexistente, usuario inactivo, empresa suspendida, superadmin, usuario sin contraseña, sesión caducada/revocada, logout, sesiones concurrentes, token hasheado, CHECK, FK CASCADE, índices y password_hash nullable.",
+      "npm run db:seed ejecutado dos veces: no duplica (1 plan, 1 empresa, 2 usuarios), no imprime contraseñas y guarda hashes scrypt de 137 caracteres. Rechaza NODE_ENV=production. Admin demo: admin@demo.local; superadmin demo: superadmin@demo.local.",
+      "npm run lint, npm run typecheck, npm test y npm run build: exit 0. Tests unitarios: 6 archivos/36 tests (scrypt, token de sesión, safeNextPath, same-origin, tenant y health). Build Next.js 16.4.6 con / estática y /login, /panel, /api/auth/login, /api/auth/logout y /health dinámicas.",
+      "init.sh sin .env ni DATABASE_URL: db:generate + lint + typecheck + 36 tests + build, exit 0, sin conectar a PostgreSQL ni arrancar servicios. init.sh con .env y PostgreSQL real: exit 0; no ejecuta db:seed ni arranca servidor. Los mensajes finales incluyen db:seed, /login y /panel.",
+      "Smoke HTTP con next start y curl: GET /panel sin sesión → 307 Location /login?next=%2Fpanel. POST login admin correcto (Origin http://localhost:3000) → 303 Location /panel y Set-Cookie central_sesion con Path=/, Max-Age=43200, HttpOnly y SameSite=lax (sin Secure en HTTP); GET /panel con cookie → 200 mostrando Administradora Demo, admin@demo.local y Empresa Demo.",
+      "Smoke HTTP de credenciales: contraseña incorrecta y email inexistente → 303 Location /login?error=credenciales&next=%2Fpanel sin Set-Cookie; GET /login?error=credenciales → 200 con el mensaje 'Email o contraseña incorrectos.'; open redirect next=//evil.example → 303 Location /panel; POST cross-origin → 403.",
+      "Smoke HTTP superadmin: login → 303 /panel y GET /panel → 200 con Superadmin Demo, superadmin@demo.local y Proveedor SaaS. Logout → 303 Location /login, Set-Cookie central_sesion vacía con Max-Age=0; la sesión queda con revocada_en en base de datos y GET /panel vuelve a 307 a /login. GET de los endpoints de auth → 405 con Allow: POST.",
+      "Revisión real a 390 px con Edge headless/CDP: /login y /panel sin scroll horizontal, inputs y botones principales de 48 px de alto, alerta de credenciales visible, y tabulación email → contraseña → Entrar → Volver y marca → Cerrar sesión en el panel. Se corrigió el foco de los inputs retirando outline-none; ahora el anillo de teclado es sólido de 2 px en latón.",
+      "Documentación durable actualizada: ARCHITECTURE.md, CONSTRAINTS.md, AGENTS.md, README.md, docs/technical-discovery.md, docs/risks-and-open-questions.md, docs/user-and-access-model.md y docs/specs/email-password-auth.md. .env sigue ignorado; no se commitearon secretos, cookies ni credenciales reales.",
+      "Fuera de alcance y no implementado: invitaciones, roles/permisos, reset de contraseña, auditoría, rate limiting durable, RLS, Playwright, dominio y facturación.",
+      "Validación independiente (2026-11-14): accept. lint/typecheck/build exit 0; npm test 6 archivos/36 tests; test:db 3 archivos/31 tests en central_de_avisos y en base vacía central_de_avisos_val_auth (3 migraciones, status up to date, base eliminada). init.sh sin .env/DATABASE_URL y con .env/PostgreSQL exit 0, sin seed ni servidor. Smoke HTTP: /panel sin sesión 307 /login?next=%2Fpanel; login admin 303 /panel con cookie HttpOnly/SameSite=Lax/Max-Age=43200; panel 200 con nombre/email/empresa; credenciales erróneas y email inexistente 303 error=credenciales sin cookie; next=//evil.example 303 /panel; superadmin 200 Proveedor SaaS; logout 303, cookie Max-Age=0 y revocada_en en BD; GET auth 405; cross-origin 403; sesión caducada/revocada, usuario INACTIVO y empresa SUSPENDIDA no autentican. Seed idempotente (1 plan/1 empresa/2 usuarios), rechaza NODE_ENV=production y no está en init.sh. Revisión CDP a 390 px sin scroll horizontal y controles de 48 px en /login y /panel. Sin secretos trackeados; .env ignorado; sin middleware, Playwright, roles, invitaciones, reset, auditoría ni rate limiting durable."
+    ],
+    "notes": "Validación independiente: accept (2026-11-14). Auth propia con sesiones opacas revocables, scrypt versionado, cookie HttpOnly/SameSite=Lax/12 h y requireSession en /panel. Gate real, test:db en base vacía y smoke HTTP verificados. Rate limiting durable, limpieza de sesiones, auditoría, RLS y E2E quedan diferidos y documentados. Siguiente paso: especificar superadmin-company-plan."
   },
   {
     "id": "superadmin-company-plan",

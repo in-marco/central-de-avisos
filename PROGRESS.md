@@ -5,11 +5,11 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `database-foundation` en `accepted`.
-- Current next ready feature: `email-password-auth`.
+- Current feature: `email-password-auth` en `accepted`.
+- Current next ready feature: `superadmin-company-plan`.
 - Current blocker: none.
-- Last verified at: 2026-11-14 00:20 (database-foundation aceptada, entorno local Windows)
-- Known risks: RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma no aprobados (no impidió generate/migrate); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
+- Last verified at: 2026-11-14 01:15 (email-password-auth aceptada, entorno local Windows)
+- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
 
@@ -87,3 +87,34 @@
 - Files or artifacts updated: `feature_list.json` (`database-foundation` a `accepted` con evidencia) y `PROGRESS.md`.
 - Known risk or unresolved issue: RLS diferida; 7 vulnerabilidades moderadas de `minimatch` en tooling; aviso de install scripts de Prisma en npm 11.20; ESLint 9 deprecado.
 - Next best step: ejecutar `feature-spec` para `email-password-auth`.
+
+### Session 007
+
+- Date: 2026-11-14
+- Goal: implementar `email-password-auth` según `docs/specs/email-password-auth.md`.
+- Completed: auth propia sin Auth.js con scrypt nativo versionado (`N=131072,r=8,p=1`, salt de 16 bytes, `timingSafeEqual` y hash dummy); tabla `sesiones` y `usuarios.password_hash` nullable; token opaco de 32 bytes con solo SHA-256 en BD; cookie `central_sesion` HttpOnly/SameSite=Lax/12 h/Secure en HTTPS; `authenticateCredentials`, `getSessionByToken`, `revokeSessionByToken`, `getCurrentSession` con `cache()` y `requireSession`; route handlers `POST /api/auth/login` y `/api/auth/logout` con 405 en GET, same-origin, 303 y `next` seguro; `/login` server-rendered y `/panel` con layout protegido; enlace de login en la home; seed idempotente con `tsx`; tests unitarios y de integración real; documentación durable actualizada.
+- Environment/versions: Windows, Node 26.13.1, npm 11.20.0, Next.js 16.4.6, Prisma 7.10.1, `@prisma/client` 7.10.1, `@prisma/adapter-pg` 7.10.1, `tsx` 4.23.15, PostgreSQL 18.7 nativo en `localhost:5432`. Sin Docker; no se añadió Auth.js, Playwright ni `server-only`.
+- Verification run:
+  - `npm install --save-dev --save-exact tsx@4.23.15`; `npm run db:generate`; migración `20261113235228_auth_sessions` generada, corregida y aplicada con `npm run db:deploy`; `npm run db:status` → "Database schema is up to date!".
+  - Hallazgo: el CHECK usaba `creada_en` pero la columna física es `creado_en`; el primer `db:deploy` falló con `42703`. Se corrigió la migración, se marcó `rolled-back`, se limpiaron las DDL parciales y se reaplicó desde base vacía `central_de_avisos_auth_verify`; después se eliminó la base de verificación.
+  - `npm run test:db`: 3 archivos/31 tests verdes (13 auth + 15 esquema + 3 aislamiento) en `central_de_avisos` y también en la base vacía de verificación.
+  - `npm run db:seed` dos veces: 1 plan, 1 empresa y 2 usuarios; sin duplicados y sin imprimir contraseñas; hashes scrypt de 137 caracteres; el seed rechaza `NODE_ENV=production`.
+  - `npm run lint`, `npm run typecheck`, `npm test` (6 archivos/36 tests) y `npm run build`: exit 0. Build Next.js 16.4.6 con `/` estática y `/login`, `/panel`, `/api/auth/login`, `/api/auth/logout` y `/health` dinámicas.
+  - `init.sh` sin `.env` ni `DATABASE_URL`: `db:generate` + gate completo, exit 0, sin conectar a PostgreSQL ni arrancar servicios. `init.sh` con `.env` y PostgreSQL real: exit 0; no ejecuta el seed.
+  - Smoke HTTP con `next start` + `curl` + cookie jar: `/panel` sin sesión → 307 `Location: /login?next=%2Fpanel`; login admin → 303 `/panel` y cookie `Max-Age=43200; HttpOnly; SameSite=lax`; `/panel` 200 con Administradora Demo/Empresa Demo; contraseña incorrecta y email inexistente → 303 al mismo `error=credenciales` sin cookie; `next=//evil.example` → `/panel` (sin open redirect); superadmin → 200 con Proveedor SaaS; logout → 303, cookie borrada, `revocada_en` en BD y `/panel` vuelve a 307; GET de auth → 405; cross-origin → 403.
+  - Revisión a 390 px y teclado con Edge headless/CDP: sin scroll horizontal en `/login` ni `/panel`; inputs y botones principales de 48 px; orden de tabulación correcto y anillo de foco sólido de 2 px. Se detectó que `outline-none` anulaba el foco de los inputs y se retiró.
+- Evidence captured: migraciones y status; 31 tests de integración; 36 tests unitarios; seed idempotente; códigos HTTP, `Location`, flags de cookie, mensajes y revocación en BD; layout/teclado a 390 px; `init.sh` con y sin base de datos.
+- Files or artifacts updated: `package.json`, `package-lock.json`, `.env.example`, `.env` local ignorado, `prisma/schema.prisma`, `prisma/migrations/20261113235228_auth_sessions/migration.sql`, `prisma/seed.ts`, `src/lib/auth/*` (password, session-token, redirect, origin, session, current-session y tests), `src/db/schema.db.test.ts`, `src/app/login/page.tsx`, `src/app/panel/layout.tsx`, `src/app/panel/page.tsx`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/logout/route.ts`, `src/app/page.tsx`, `src/app/globals.css`, `init.sh`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CONSTRAINTS.md`, `docs/technical-discovery.md`, `docs/risks-and-open-questions.md`, `docs/user-and-access-model.md`, `docs/specs/email-password-auth.md`, `PROGRESS.md` y `feature_list.json`.
+- Known risk or unresolved issue: rate limiting durable diferido; no hay limpieza programada de sesiones; credenciales demo solo locales; `x-forwarded-*` debe revisarse si se despliega detrás de un proxy; 7 vulnerabilidades moderadas de `minimatch` en tooling; aviso de install scripts de Prisma/esbuild en npm 11.20; ESLint 9 deprecado.
+- Next best step: validación independiente de `email-password-auth`; si se acepta, planificar `superadmin-company-plan`.
+
+### Session 008
+
+- Date: 2026-11-14
+- Goal: validación independiente de `email-password-auth`.
+- Result: `accept`; sin hallazgos bloqueantes. Auth y sesiones cumplen los escenarios de la spec.
+- Verification run: `lint`, `typecheck`, `test` (36), `build` y `test:db` (31) exit 0; `test:db` también sobre base vacía `central_de_avisos_val_auth` con 3 migraciones y status up to date; seed idempotente y rechazo en producción; `init.sh` con y sin `.env`/PostgreSQL sin seed ni servicios.
+- Evidence captured: `/panel` sin sesión 307 a login; login admin 303 con cookie HttpOnly/SameSite/Lax/12 h; panel 200 con empresa; credenciales erróneas y email inexistente con el mismo error genérico y sin cookie; open redirect bloqueado; superadmin 200 con Proveedor SaaS; logout revoca en BD y borra cookie; GET auth 405; cross-origin 403; sesiones caducadas/revocadas, usuario inactivo y empresa suspendida no autentican; revisión CDP a 390 px sin scroll horizontal y controles de 48 px.
+- Files or artifacts updated: `feature_list.json` (`email-password-auth` a `accepted` con evidencia) y `PROGRESS.md`.
+- Known risk or unresolved issue: rate limiting durable y limpieza de sesiones diferidos; credenciales demo solo locales; `x-forwarded-*` a revisar detrás de proxy; RLS diferida; 7 vulnerabilidades moderadas de `minimatch` en tooling.
+- Next best step: ejecutar `feature-spec` para `superadmin-company-plan`.
