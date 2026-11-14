@@ -39,6 +39,17 @@ Antes de escribir código:
 - No activar el modo VERIFACTU: el MVP es NO-VERIFACTU con capa de abstracción.
 - La documentación del proyecto se escribe en español.
 
+## Agent Skills
+
+- Los flujos (`feature-flow`, `github-flow`, `feature-spec`,
+  `feature-implementer`, `feature-validator`, etc.) viven en `.agents/skills/` y
+  son la única fuente de verdad.
+- Claude Code los ve mediante envoltorios en `.claude/skills/`, y los
+  subagentes `planner`, `implementer` y `validator` están en `.claude/agents/`.
+  opencode usa `.opencode/agents/`.
+- Cualquier cambio de reglas se hace en `.agents/skills/`, no en los
+  envoltorios.
+
 ## Required Artifacts
 
 - `feature_list.json`: fuente de verdad del estado de las features.
