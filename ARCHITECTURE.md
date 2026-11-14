@@ -5,9 +5,9 @@ proveedor. La app es un monolito Next.js con App Router y una única superficie
 de datos PostgreSQL. Existe login con email y contraseña, sesiones opacas
 revocables, un panel privado con navegación por permisos, roles de empresa
 combinables con gestión en `/panel/usuarios`, configuración fiscal y de
-facturación de la empresa en `/panel/empresa` y un panel de superadmin para
-planes, alta de empresas e invitación de su administrador; todavía no hay
-dominio operativo.
+facturación de la empresa en `/panel/empresa`, un panel de superadmin para
+planes, alta de empresas e invitación de su administrador, y la primera parte
+del dominio operativo: clientes con sedes y contactos en `/panel/clientes`.
 
 ## Capas y dirección de dependencias
 
@@ -18,6 +18,7 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   │    ├─ src/lib/authz/      matriz de permisos y navegación (puros) y guards de servidor
   │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles, configuración
   │    │                      de facturación), con tenantFilter o requireEmpresaId
+  │    ├─ src/lib/clientes/   clientes, sedes y contactos (validación pura y repositorio con tenantFilter)
   │    └─ src/lib/superadmin/ autorización, planes, altas e invitaciones
   └─ src/db/      acceso a datos y contrato de tenant
        └─ src/generated/prisma/ cliente Prisma generado (no versionado)
@@ -83,6 +84,31 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   empresa, usuario y expiración. CHECK de expiración posterior y aceptación no
   anterior a la creación. El estado (`Pendiente`/`Caducada`/`Aceptada`) es
   derivado y el token crudo solo viaja en una cookie flash de 60 s.
+- `clientes`, `sedes` y `contactos` llegan en la migración
+  `20261114190000_clientes_sedes_contactos`, posterior a la de facturación.
+- `clientes`: cliente de una empresa y **sujeto fiscal**: `razon_social`,
+  `nif`, `direccion_facturacion` y `tarifa_horaria decimal(12,2)` opcional
+  (sustituye a la tarifa de la empresa; aún no se usa en cálculos). FK
+  `empresa_id` `Restrict`, `UNIQUE (empresa_id, nif)` (el mismo NIF puede
+  existir en otra empresa) y `UNIQUE (id, empresa_id)` como destino de los FK
+  compuestos. CHECK `clientes_nif_normalizado` y `clientes_tarifa_no_negativa`.
+- `sedes`: lugar de la intervención; solo `nombre` y `direccion`, **sin datos
+  fiscales**. Lleva `empresa_id` y FK compuesto `(cliente_id, empresa_id) →
+  clientes(id, empresa_id)` `Restrict`, así que PostgreSQL rechaza una sede con
+  una empresa distinta de la de su cliente. `UNIQUE (id, cliente_id)` e índice
+  por cliente.
+- `contactos`: persona del cliente con `telefono` y `email` opcionales (CHECK
+  `contactos_telefono_o_email` y `contactos_email_normalizado`), FK compuesto
+  `(cliente_id, empresa_id)` como las sedes y `sede_id` nullable (nulo = todo
+  el cliente). **Limitación:** Prisma no permite una relación opcional que
+  reutilice `cliente_id` (obligatorio), así que `sede_id` es un FK simple a
+  `sedes(id)` y la regla «la sede es del mismo cliente» se aplica en
+  `upsertContacto` y se cubre con `test:db`. Añadir el FK compuesto solo en SQL
+  haría que `prisma migrate diff` lo marcara como deriva.
+- **Facturación:** la futura factura de trabajo (`invoice-draft`) tendrá FK
+  `cliente_id` (y `empresa_id`), nunca `sede_id`; razón social, NIF y dirección
+  de facturación se toman del cliente. La sede solo aparece como lugar de la
+  intervención en el aviso.
 
 ## Aislamiento multiempresa
 
@@ -191,6 +217,46 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
 - Fuera de este slice: rol `CLIENTE` y portal, invitar o desactivar usuarios
   de empresa y auditoría de cambios de rol.
 
+## Clientes, sedes y contactos
+
+- **Permiso:** `clientes.gestionar` (Administrador y Oficina). Navegación
+  «Clientes»; técnico, usuario sin roles y superadmin reciben 403.
+- **Páginas** (`force-dynamic`, `requirePermission("clientes.gestionar")`):
+  `/panel/clientes` (listado en tarjetas con «N sedes · N contactos» y estado
+  vacío), `/panel/clientes/nuevo` (datos de facturación, primera sede y primer
+  contacto) y `/panel/clientes/[id]` (formularios de datos de facturación, de
+  cada sede y de cada contacto, y «Añadir sede»/«Añadir contacto»). Un id
+  inexistente, que no es un UUID o de otra empresa da el mismo 404 propio
+  (`[id]/not-found.tsx`), sin datos. La UI compartida del panel está en
+  `src/app/panel/_components/ui.tsx`; `/panel` no importa la del superadmin.
+- **Route handlers** (`POST`; `GET` → 405 `Allow: POST`):
+  `/api/panel/clientes` (alta), `/api/panel/clientes/datos`,
+  `/api/panel/clientes/sedes` (crea sin `sedeId`, edita con él) y
+  `/api/panel/clientes/contactos` (igual con `contactoId`; `sedeId` vacío =
+  todo el cliente). Comprueban mismo origen y `authorizeCompanyRequest`
+  (utilidades en `src/app/api/panel/clientes/_shared/respond.ts`) y responden
+  303 con `?ok=creado|datos|sede-creada|sede|contacto-creado|contacto` o
+  `?error=campos|nif|nif-duplicado|tarifa|email|telefono|contacto|sede|
+  no-encontrado|servicio`. Un `clienteId` ajeno o inválido vuelve a
+  `/panel/clientes?error=no-encontrado`; una sede o un contacto ajeno, al
+  detalle con `?error=no-encontrado`.
+- **Lógica:** `src/lib/clientes/validation.ts` (pura: NIF normalizado,
+  teléfono `^\+?[0-9 ()-]{6,20}$` con al menos 6 dígitos, email normalizado,
+  tarifa con `parseImporteMensual`, vacíos a `null`, límites 160/240/120) y
+  `src/lib/clientes/clientes.ts` (repositorio con `tenantFilter`; alta
+  transaccional cliente + sede + contacto; `P2002` → `nif-duplicado`). Las
+  ediciones son «última escritura gana». No hay borrado ni desactivación.
+
+## RLS: reevaluación al añadir clientes
+
+`clientes`, `sedes` y `contactos` son las primeras tablas operativas. RLS sigue
+diferida: no hay consultas cruzadas entre empresas fuera de
+`src/lib/superadmin/*` y todas las consultas de clientes pasan por
+`tenantFilter`, con aislamiento A/B en `test:db`. Además, los FK compuestos
+con `empresa_id` impiden en PostgreSQL mezclar empresas al escribir. La
+decisión se debe revisar antes de producción o cuando aparezca la primera
+consulta cruzada (ver `CONSTRAINTS.md`).
+
 ## Activación del administrador invitado
 
 - `/invitacion/[token]` es pública y `force-dynamic`. Valida el formato del
@@ -234,7 +300,8 @@ empresa y con las futuras invitaciones y roles.
   empresa. Una sesión caducada, revocada, con usuario `INACTIVO` o con empresa
   `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
 - **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth;
-  privadas `/panel`, `/panel/usuarios`, `/panel/empresa` y `/superadmin`. Cada página de
+  privadas `/panel`, `/panel/usuarios`, `/panel/empresa`, `/panel/clientes` y
+  `/superadmin`. Cada página de
   `/panel` llama a `requireSession` o `requirePermission`;
   `/superadmin` añade `requireSuperadmin`, que redirige a
   `/login?next=...` si no hay sesión y usa `forbidden()` si el usuario no es
@@ -265,7 +332,9 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
   entre dos empresas, autenticación/sesiones, superadmin (planes, altas,
   duplicados, plan inactivo, token hasheado, estados de invitación y rollback)
   y roles (CHECK, validaciones, aislamiento y último administrador con dos
-  transacciones concurrentes reales).
+  transacciones concurrentes reales) y clientes (columnas de `sedes` sin datos
+  fiscales, CHECK, FK compuestos, alta con rollback, NIF duplicado por empresa,
+  sede de otro cliente y aislamiento A/B).
 - `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
   Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
   `init.sh` ni del gate.

@@ -114,9 +114,37 @@
 - **Cambiar la serie tras emitir:** hoy nada impide cambiar la serie después de
   emitir facturas, porque todavía no se emiten. `invoice-signed-pdf` debe
   decidir si lo bloquea.
-- **Tope de tarifa:** la tarifa horaria es > 0 y ≤ 9999,99 €/h, sin IVA. Si
-  negocio necesita tarifa 0 u otro tope, hay que cambiar el CHECK y la
+- **Tope de tarifa:** la tarifa horaria de empresa es > 0 y ≤ 9999,99 €/h, sin
+  IVA. Si negocio necesita tarifa 0 u otro tope, hay que cambiar el CHECK y la
   validación.
+- **Reglas de tarifa distintas en empresa y cliente:** la tarifa acordada del
+  cliente (`clientes.tarifa_horaria`, decimal(12,2)) admite 0 y no tiene el
+  tope de 9999,99 €, mientras que la de empresa exige > 0. Las dos features se
+  aceptaron por separado; `invoice-draft`, que aplica el fallback cliente →
+  empresa, debe decidir si unifica las reglas o si una tarifa de cliente 0
+  significa trabajo sin cargo.
+- **Clientes sin borrado ni desactivación:** un cliente, sede o contacto creado
+  por error no se puede eliminar ni ocultar desde la interfaz; solo editar. Los
+  duplicados tampoco se fusionan. Mitigación: NIF único por empresa; pendiente
+  de una feature específica si hace falta antes de la demo.
+- **Cambios de clientes sin auditoría:** altas y ediciones de clientes, sedes y
+  contactos no dejan registro append-only; las ediciones son «última escritura
+  gana». Mitigación: queda en `audit-trail-view`.
+- **Listado de clientes sin paginación ni búsqueda:** `/panel/clientes` carga
+  todos los clientes de la empresa. Aceptable para la demo; revisar con
+  volúmenes reales.
+- **Sede del contacto validada solo en la aplicación:** `contactos.sede_id` es
+  un FK simple a `sedes(id)` (limitación de Prisma con relaciones opcionales);
+  que la sede sea del mismo cliente lo garantiza `upsertContacto` y lo cubre
+  `test:db`, no PostgreSQL. Un insert fuera del repositorio podría vincular un
+  contacto a una sede de otro cliente **o incluso de otra empresa**: el FK
+  compuesto ata el contacto a su cliente y empresa, pero `sede_id` no se
+  comprueba contra `empresa_id` en la base (verificado por psql en la
+  validación). Mitigación: escribir contactos solo vía
+  `src/lib/clientes/clientes.ts`; mejora futura posible: trigger o FK compuesto
+  `(sede_id, cliente_id)`.
+- **NIF obligatorio para particulares:** el MVP exige NIF a todo cliente
+  porque la factura completa lo requiere. Confirmar con la gestoría.
 
 ## Research Tasks
 
@@ -125,7 +153,7 @@
 - Lectura de la especificación VERIFACTU y de las obligaciones del modo NO-VERIFACTU.
 - Prueba de precisión con 10-20 partes manuscritos reales y varios proveedores de IA.
 - Revisión de DPAs y residencia de datos de los proveedores de IA y cloud.
-- Reevaluación de RLS al llegar la autenticación o una tabla operativa con consultas cruzadas.
+- Reevaluación de RLS al llegar la autenticación o una tabla operativa con consultas cruzadas. Revisada en `client-records`: sigue diferida (sin consultas cruzadas; ver `CONSTRAINTS.md`); confirmar antes de producción o con `superadmin-tenant-view`.
 
 ## Resueltas
 

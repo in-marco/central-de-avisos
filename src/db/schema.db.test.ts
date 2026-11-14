@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import type { Prisma } from "@/generated/prisma/client";
 import { disconnectDb, getDb } from "./client";
 import { inRollback, uniqueSuffix } from "./db-test-utils";
 
@@ -935,5 +936,264 @@ describe("configuración de facturación de empresas", () => {
         `;
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("clientes, sedes y contactos", () => {
+  async function dosEmpresas(tx: Prisma.TransactionClient, suffix: string) {
+    const plan = await tx.plan.create({
+      data: { nombre: `Plan clientes esquema ${suffix}`, importeMensual: "10.00" },
+    });
+    const crear = (tag: string) =>
+      tx.empresa.create({
+        data: {
+          nombre: `Empresa ${tag} ${suffix}`,
+          nif: `${tag}${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-${tag.toLowerCase()}-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+    const a = await crear("SA");
+    const b = await crear("SB");
+    const cliente = await tx.cliente.create({
+      data: {
+        empresaId: a.id,
+        razonSocial: "Cliente esquema",
+        nif: "B12345678",
+        direccionFacturacion: "Dirección",
+      },
+    });
+    const sede = await tx.sede.create({
+      data: { empresaId: a.id, clienteId: cliente.id, nombre: "Sede", direccion: "Dir" },
+    });
+
+    return { a, b, cliente, sede };
+  }
+
+  it("sedes no tiene datos fiscales: la factura irá al cliente", async () => {
+    const rows = await getDb().$queryRaw<Array<{ table_name: string; column_name: string }>>`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN ('clientes', 'sedes', 'contactos')
+      ORDER BY table_name, ordinal_position
+    `;
+    const columnas = (tabla: string) =>
+      rows.filter((row) => row.table_name === tabla).map((row) => row.column_name);
+
+    expect(columnas("clientes")).toEqual([
+      "id",
+      "empresa_id",
+      "razon_social",
+      "nif",
+      "direccion_facturacion",
+      "tarifa_horaria",
+      "creado_en",
+      "actualizado_en",
+    ]);
+    expect(columnas("sedes")).toEqual([
+      "id",
+      "empresa_id",
+      "cliente_id",
+      "nombre",
+      "direccion",
+      "creado_en",
+      "actualizado_en",
+    ]);
+    expect(columnas("contactos")).toEqual([
+      "id",
+      "empresa_id",
+      "cliente_id",
+      "sede_id",
+      "nombre",
+      "telefono",
+      "email",
+      "creado_en",
+      "actualizado_en",
+    ]);
+    for (const fiscal of ["nif", "razon_social", "direccion_facturacion"]) {
+      expect(columnas("sedes")).not.toContain(fiscal);
+      expect(columnas("contactos")).not.toContain(fiscal);
+    }
+  });
+
+  it("incluye CHECK, FK compuestos e índices únicos", async () => {
+    const checks = await getDb().$queryRaw<Array<{ conname: string }>>`
+      SELECT conname FROM pg_constraint
+      WHERE conname IN (
+        'clientes_nif_normalizado',
+        'clientes_tarifa_no_negativa',
+        'contactos_email_normalizado',
+        'contactos_telefono_o_email'
+      )
+      ORDER BY conname
+    `;
+    expect(checks.map((row) => row.conname)).toEqual([
+      "clientes_nif_normalizado",
+      "clientes_tarifa_no_negativa",
+      "contactos_email_normalizado",
+      "contactos_telefono_o_email",
+    ]);
+
+    const fks = await getDb().$queryRaw<
+      Array<{ conname: string; confdeltype: string; columnas: number }>
+    >`
+      SELECT conname, confdeltype::text AS confdeltype, cardinality(conkey)::int AS columnas
+      FROM pg_constraint
+      WHERE conname IN (
+        'clientes_empresa_id_fkey',
+        'sedes_cliente_id_empresa_id_fkey',
+        'contactos_cliente_id_empresa_id_fkey',
+        'contactos_sede_id_fkey'
+      )
+      ORDER BY conname
+    `;
+    expect(fks).toEqual([
+      { conname: "clientes_empresa_id_fkey", confdeltype: "r", columnas: 1 },
+      { conname: "contactos_cliente_id_empresa_id_fkey", confdeltype: "r", columnas: 2 },
+      { conname: "contactos_sede_id_fkey", confdeltype: "r", columnas: 1 },
+      { conname: "sedes_cliente_id_empresa_id_fkey", confdeltype: "r", columnas: 2 },
+    ]);
+
+    const indexes = await getDb().$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename IN ('clientes', 'sedes', 'contactos')
+      ORDER BY indexname
+    `;
+    expect(indexes.map((row) => row.indexname)).toEqual([
+      "clientes_empresa_id_nif_key",
+      "clientes_id_empresa_id_key",
+      "clientes_pkey",
+      "contactos_cliente_id_idx",
+      "contactos_pkey",
+      "contactos_sede_id_idx",
+      "sedes_cliente_id_idx",
+      "sedes_id_cliente_id_key",
+      "sedes_pkey",
+    ]);
+  });
+
+  it("rechaza una sede o un contacto con empresa distinta de su cliente", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { b, cliente } = await dosEmpresas(tx, suffix);
+        return tx.sede.create({
+          data: { empresaId: b.id, clienteId: cliente.id, nombre: "X", direccion: "X" },
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { b, cliente } = await dosEmpresas(tx, `${suffix}c`);
+        return tx.contacto.create({
+          data: { empresaId: b.id, clienteId: cliente.id, nombre: "X", telefono: "600000000" },
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rechaza NIF no normalizado y tarifa negativa; admite el mismo NIF en otra empresa", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a } = await dosEmpresas(tx, suffix);
+        return tx.cliente.create({
+          data: {
+            empresaId: a.id,
+            razonSocial: "X",
+            nif: " a87654321",
+            direccionFacturacion: "X",
+          },
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a } = await dosEmpresas(tx, `${suffix}t`);
+        return tx.cliente.create({
+          data: {
+            empresaId: a.id,
+            razonSocial: "X",
+            nif: "A87654321",
+            direccionFacturacion: "X",
+            tarifaHoraria: "-0.01",
+          },
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a } = await dosEmpresas(tx, `${suffix}d`);
+        return tx.cliente.create({
+          data: {
+            empresaId: a.id,
+            razonSocial: "Duplicado",
+            nif: "B12345678",
+            direccionFacturacion: "X",
+          },
+        });
+      }),
+    ).rejects.toThrow();
+
+    const otraEmpresa = await inRollback(async (tx) => {
+      const { b } = await dosEmpresas(tx, `${suffix}o`);
+      return tx.cliente.create({
+        data: {
+          empresaId: b.id,
+          razonSocial: "Mismo NIF, otra empresa",
+          nif: "B12345678",
+          direccionFacturacion: "X",
+          tarifaHoraria: "0",
+        },
+      });
+    });
+    expect(otraEmpresa.nif).toBe("B12345678");
+  });
+
+  it("rechaza un contacto sin teléfono ni email o con email no normalizado", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente } = await dosEmpresas(tx, suffix);
+        return tx.contacto.create({
+          data: { empresaId: a.id, clienteId: cliente.id, nombre: "Sin datos" },
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente } = await dosEmpresas(tx, `${suffix}e`);
+        return tx.contacto.create({
+          data: {
+            empresaId: a.id,
+            clienteId: cliente.id,
+            nombre: "Email",
+            email: "Ana@Example.com",
+          },
+        });
+      }),
+    ).rejects.toThrow();
+
+    const valido = await inRollback(async (tx) => {
+      const { a, cliente, sede } = await dosEmpresas(tx, `${suffix}v`);
+      return tx.contacto.create({
+        data: {
+          empresaId: a.id,
+          clienteId: cliente.id,
+          sedeId: sede.id,
+          nombre: "Válido",
+          email: "ana@example.com",
+        },
+      });
+    });
+    expect(valido.telefono).toBeNull();
   });
 });

@@ -84,6 +84,7 @@ model Empresa {
   plan         Plan         @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   usuarios     Usuario[]
   invitaciones Invitacion[]
+  clientes     Cliente[]
 
   @@index([planId])
   @@map("empresas")
@@ -144,4 +145,71 @@ model Invitacion {
   @@index([usuarioId])
   @@index([expiraEn])
   @@map("invitaciones")
+}
+
+// Cliente de una empresa de servicios. Es el sujeto fiscal: razón social, NIF
+// y dirección de facturación viven solo aquí (la factura futura referenciará
+// `cliente_id`, nunca la sede). `tarifa_horaria` es opcional y sustituye a la
+// tarifa de la empresa. CHECK de NIF normalizado y tarifa no negativa en SQL.
+model Cliente {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId            String   @map("empresa_id") @db.Uuid
+  razonSocial          String   @map("razon_social")
+  nif                  String
+  direccionFacturacion String   @map("direccion_facturacion")
+  tarifaHoraria        Decimal? @map("tarifa_horaria") @db.Decimal(12, 2)
+  creadoEn             DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn        DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sedes     Sede[]
+  contactos Contacto[]
+
+  // Destino de los FK compuestos (cliente_id, empresa_id) de sedes y contactos.
+  @@unique([id, empresaId])
+  @@unique([empresaId, nif])
+  @@map("clientes")
+}
+
+// Sede de un cliente: solo el lugar de la intervención, sin datos fiscales.
+// El FK compuesto impide que la sede tenga una empresa distinta de su cliente.
+model Sede {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId     String   @map("empresa_id") @db.Uuid
+  clienteId     String   @map("cliente_id") @db.Uuid
+  nombre        String
+  direccion     String
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  cliente   Cliente    @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  contactos Contacto[]
+
+  @@unique([id, clienteId])
+  @@index([clienteId])
+  @@map("sedes")
+}
+
+// Contacto de un cliente, opcionalmente vinculado a una de sus sedes. Prisma
+// no permite una relación opcional que reutilice `cliente_id` (obligatorio),
+// así que `sede_id` es un FK simple y la regla «la sede es del mismo cliente»
+// se aplica en src/lib/clientes/clientes.ts. Los CHECK de teléfono o email y
+// de email normalizado viven en SQL.
+model Contacto {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId     String   @map("empresa_id") @db.Uuid
+  clienteId     String   @map("cliente_id") @db.Uuid
+  sedeId        String?  @map("sede_id") @db.Uuid
+  nombre        String
+  telefono      String?
+  email         String?
+  creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  cliente Cliente @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  sede    Sede?   @relation(fields: [sedeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([clienteId])
+  @@index([sedeId])
+  @@map("contactos")
 }

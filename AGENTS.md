@@ -117,6 +117,9 @@ npm run dev
   `usuarios.gestionar`, es decir, rol `ADMINISTRADOR`; el resto recibe 403)
 - Configuración de empresa: `http://localhost:3000/panel/empresa` (solo
   permiso `empresa.configurar`, rol `ADMINISTRADOR`; el resto recibe 403)
+- Clientes: `http://localhost:3000/panel/clientes`, `/panel/clientes/nuevo` y
+  `/panel/clientes/<id>` (permiso `clientes.gestionar`: `ADMINISTRADOR` y
+  `OFICINA`; técnico y superadmin reciben 403; un cliente de otra empresa, 404)
 - Panel de proveedor: `http://localhost:3000/superadmin` (solo
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
@@ -143,7 +146,9 @@ vive en `src/lib/authz/permissions.ts` y los guards son `requirePermission`
 (páginas) y `authorizeCompanyRequest` (route handlers). El administrador cambia
 roles en `/panel/usuarios` (`POST /api/panel/usuarios/roles`) y la
 configuración fiscal, serie, tarifa horaria y modo NO-VERIFACTU en
-`/panel/empresa` (`POST /api/panel/empresa`).
+`/panel/empresa` (`POST /api/panel/empresa`). Administrador y oficina gestionan
+clientes, sedes y contactos en `/panel/clientes` (`POST /api/panel/clientes`,
+`/datos`, `/sedes` y `/contactos`).
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.

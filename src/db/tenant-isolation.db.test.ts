@@ -13,6 +13,14 @@ import {
 } from "@/lib/empresa/usuarios";
 import { updateCompanyBillingSettings } from "@/lib/empresa/configuracion";
 import { parseBillingSettingsForm } from "@/lib/empresa/configuracion-validation";
+import {
+  createClienteInTransaction,
+  getClienteDetalle,
+  listClientes,
+  updateCliente,
+  upsertContacto,
+  upsertSede,
+} from "@/lib/clientes/clientes";
 
 afterAll(async () => {
   await disconnectDb();
@@ -253,6 +261,106 @@ describe("aislamiento multiempresa", () => {
     expect(result.bDespues.nif).toBe(result.empresaB.nif);
     expect(result.bDespues.serieFactura).toBe("B");
     expect(result.bDespues.tarifaHoraria?.toFixed(2)).toBe("30.00");
+  });
+
+  it("la oficina de A no lista, lee ni edita clientes, sedes ni contactos de B", async () => {
+    const suffix = uniqueSuffix();
+
+    const result = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan clientes aislamiento ${suffix}`, importeMensual: "10.00" },
+      });
+      const createEmpresa = (tag: string) =>
+        tx.empresa.create({
+          data: {
+            nombre: `Empresa ${tag} ${suffix}`,
+            nif: `${tag}${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-${tag.toLowerCase()}-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+      const empresaA = await createEmpresa("CA");
+      const empresaB = await createEmpresa("CB");
+      const nuevo = (razonSocial: string) => ({
+        cliente: {
+          razonSocial,
+          nif: "B12345678",
+          direccionFacturacion: "Dirección",
+          tarifaHoraria: null,
+        },
+        sede: { nombre: "Sede", direccion: "Dirección sede" },
+        contacto: { nombre: "Contacto", telefono: "600000000", email: null },
+        contactoEnSede: true,
+      });
+      const clienteA = await createClienteInTransaction(tx, empresaA.id, nuevo("Cliente A"));
+      const clienteB = await createClienteInTransaction(tx, empresaB.id, nuevo("Cliente B"));
+
+      if (!clienteA.ok || !clienteB.ok) {
+        throw new Error("alta");
+      }
+
+      const sedeB = await tx.sede.findFirstOrThrow({ where: { clienteId: clienteB.clienteId } });
+      const contactoB = await tx.contacto.findFirstOrThrow({
+        where: { clienteId: clienteB.clienteId },
+      });
+      const a = empresaA.id;
+
+      const listadoA = await listClientes(tx, a);
+      const detalleB = await getClienteDetalle(tx, a, clienteB.clienteId);
+      const updateB = await updateCliente(tx, a, clienteB.clienteId, {
+        razonSocial: "Hackeado",
+        nif: "B12345678",
+        direccionFacturacion: "X",
+        tarifaHoraria: null,
+      });
+      const nuevaSedeEnB = await upsertSede(tx, a, {
+        clienteId: clienteB.clienteId,
+        values: { nombre: "X", direccion: "X" },
+      });
+      const editarSedeB = await upsertSede(tx, a, {
+        clienteId: clienteA.clienteId,
+        sedeId: sedeB.id,
+        values: { nombre: "X", direccion: "X" },
+      });
+      const editarContactoB = await upsertContacto(tx, a, {
+        clienteId: clienteA.clienteId,
+        contactoId: contactoB.id,
+        values: { nombre: "X", telefono: "600000001", email: null, sedeId: null },
+      });
+      const contactoConSedeB = await upsertContacto(tx, a, {
+        clienteId: clienteA.clienteId,
+        values: { nombre: "X", telefono: "600000001", email: null, sedeId: sedeB.id },
+      });
+
+      const despuesB = await getClienteDetalle(tx, empresaB.id, clienteB.clienteId);
+
+      return {
+        listadoA,
+        clienteAId: clienteA.clienteId,
+        detalleB,
+        updateB,
+        nuevaSedeEnB,
+        editarSedeB,
+        editarContactoB,
+        contactoConSedeB,
+        despuesB,
+      };
+    });
+
+    expect(result.listadoA.map((cliente) => cliente.id)).toEqual([result.clienteAId]);
+    expect(result.detalleB).toBeNull();
+    expect(result.updateB).toEqual({ ok: false, error: "cliente-no-encontrado" });
+    expect(result.nuevaSedeEnB).toEqual({ ok: false, error: "cliente-no-encontrado" });
+    expect(result.editarSedeB).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.editarContactoB).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.contactoConSedeB).toEqual({ ok: false, error: "sede" });
+    expect(result.despuesB?.razonSocial).toBe("Cliente B");
+    expect(result.despuesB?.sedes).toEqual([
+      expect.objectContaining({ nombre: "Sede", direccion: "Dirección sede" }),
+    ]);
+    expect(result.despuesB?.contactos).toEqual([
+      expect.objectContaining({ nombre: "Contacto", telefono: "600000000" }),
+    ]);
   });
 
   it("requireEmpresaId impide consultar sin contexto de empresa", () => {
