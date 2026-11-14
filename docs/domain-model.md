@@ -42,15 +42,27 @@
 - Razón social, NIF y dirección de facturación.
 - Tiene una o varias sedes y uno o varios contactos.
 - Puede tener usuarios de portal, siempre dentro de la misma empresa proveedora.
+- Implementado (`client-records`): tabla `clientes` con `razon_social`,
+  `nif` (obligatorio, normalizado, único por empresa: el mismo NIF puede
+  existir en otra empresa), `direccion_facturacion` y `tarifa_horaria`
+  opcional (la tarifa acordada que sustituye a la de la empresa; solo se
+  guarda, aún no se calcula nada con ella). Es el **sujeto fiscal**: la
+  factura de trabajo futura llevará `cliente_id`, no `sede_id`. Se crea siempre
+  con su primera sede y su primer contacto. No se borra ni se desactiva.
 
 ### Sede
 - Pertenece a un cliente.
-- Dirección operativa y contacto principal.
+- Dirección operativa.
 - Es el lugar donde se ejecuta la intervención.
+- Implementado: tabla `sedes` con `nombre` y `direccion`, sin datos fiscales.
+  No hay «contacto principal» de sede en el MVP: el aviso elegirá el contacto.
 
 ### Contacto
 - Persona asociada a un cliente o a una sede.
 - Nombre, teléfono y email.
+- Implementado: tabla `contactos` con `nombre`, `telefono` y `email`
+  opcionales pero al menos uno de los dos, y `sede_id` opcional (nulo = todo
+  el cliente). La sede, si existe, es del mismo cliente.
 
 ### Aviso
 - Empresa, cliente, sede y contacto.

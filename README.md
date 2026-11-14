@@ -148,10 +148,11 @@ Los usuarios de empresa tienen roles combinables (`Administrador`, `Oficina`,
 `src/lib/authz/permissions.ts`. Los roles se leen de la base de datos en cada
 petición: un cambio surte efecto sin volver a iniciar sesión.
 
-- La navegación del panel muestra «Inicio» a todos, «Usuarios» y «Empresa»
-  solo a quien puede gestionar usuarios o configurar la empresa (rol
-  Administrador) y «Panel de proveedor» solo al superadmin. Ocultar
-  no es la defensa: cada página y acción se autoriza en servidor.
+- La navegación del panel muestra «Inicio» a todos, «Clientes» a
+  administrador y oficina, «Usuarios» y «Empresa» solo a quien puede gestionar
+  usuarios o configurar la empresa (rol Administrador) y «Panel de proveedor»
+  solo al superadmin. Ocultar no es la defensa: cada página y acción se
+  autoriza en servidor.
 - `/panel/usuarios` (rol Administrador) lista los usuarios de la empresa y
   permite cambiar sus roles. No se puede dejar a un usuario sin roles, quitarse
   el propio rol de administrador ni dejar a la empresa sin administradores
@@ -179,8 +180,28 @@ de factura, la tarifa horaria por defecto (sin IVA) y el modo fiscal.
   error se vuelven a mostrar los valores guardados.
 - Oficina, técnico, un usuario sin roles y el superadmin reciben 403 en la
   página y en `POST /api/panel/empresa`; un anónimo va al login.
-- Fuera de este slice: numeración de facturas, IVA configurable, tarifas por
-  cliente y auditoría de los cambios.
+- La tarifa acordada con un cliente se guarda en su ficha (ver «Clientes, sedes
+  y contactos») y sustituirá a la de la empresa cuando se facture.
+- Fuera de este slice: numeración de facturas, IVA configurable y auditoría de
+  los cambios.
+
+## Clientes, sedes y contactos
+
+Administrador y oficina (permiso `clientes.gestionar`) gestionan los clientes
+de su empresa en `/panel/clientes`:
+
+- **Alta** (`/panel/clientes/nuevo`): datos de facturación (razón social, NIF
+  obligatorio, dirección de facturación y tarifa horaria opcional), la primera
+  sede y el primer contacto, en una sola transacción.
+- **Detalle** (`/panel/clientes/<id>`): edición de los datos de facturación,
+  de cada sede y de cada contacto; «Añadir sede» y «Añadir contacto». Un
+  contacto es de todo el cliente o de una de sus sedes, y necesita teléfono o
+  email.
+- **Listado:** razón social, NIF y «N sedes · N contactos».
+- La factura irá siempre al cliente (sujeto fiscal), nunca a la sede.
+- El NIF es único dentro de la empresa. Un cliente de otra empresa responde 404.
+- Técnico, usuario sin roles y superadmin reciben 403. No hay borrado,
+  búsqueda ni paginación.
 
 ## Activación del administrador invitado
 
@@ -207,6 +228,7 @@ npm run dev
 - Usuarios y roles: <http://localhost:3000/panel/usuarios> (solo administrador)
 - Configuración de empresa: <http://localhost:3000/panel/empresa> (solo
   administrador)
+- Clientes: <http://localhost:3000/panel/clientes> (administrador y oficina)
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
@@ -271,9 +293,11 @@ Se ejecutan en serie dentro de transacciones con rollback y cubren constraints,
 FKs, aislamiento entre dos empresas, autenticación (credenciales, estados,
 caducidad, revocación y token hasheado), superadmin (planes, altas,
 duplicados, plan inactivo, invitación hasheada, estados y rollback) y roles
-(CHECK, validaciones, aislamiento y último administrador en concurrencia) y
+(CHECK, validaciones, aislamiento y último administrador en concurrencia),
 configuración de facturación (columnas, enum, CHECK de serie y tarifa,
-normalización, NIF duplicado y aislamiento).
+normalización, NIF duplicado y aislamiento) y clientes (CHECK, FK compuestos,
+alta con rollback, NIF por empresa, sede de otro cliente y aislamiento entre
+empresas).
 
 Smoke HTTP con `next start` (Git Bash; `SMOKE_*` opcionales para las
 comprobaciones autenticadas por rol):
@@ -293,10 +317,14 @@ bash scripts/validate-smoke.sh
 - `src/app/health/route.ts` — endpoint `GET /health`.
 - `src/app/login/` — formulario de login server-rendered.
 - `src/app/panel/` — layout con navegación por permisos, panel, `usuarios/`
-  (roles), `empresa/` (configuración de facturación) y `forbidden.tsx` (403
-  propio).
+  (roles), `empresa/` (configuración de facturación), `clientes/` (listado,
+  alta, detalle y 404 propio), `_components/` (UI compartida del panel) y
+  `forbidden.tsx` (403 propio).
 - `src/app/api/panel/usuarios/roles/` — `POST` de cambio de roles.
 - `src/app/api/panel/empresa/` — `POST` de configuración de la empresa.
+- `src/app/api/panel/clientes/` — `POST` de alta, datos, sedes y contactos.
+- `src/lib/clientes/` — validación pura y repositorio de clientes, sedes y
+  contactos con `tenantFilter`.
 - `src/lib/authz/` — matriz de permisos, navegación y guards
   (`requirePermission`, `authorizeCompanyRequest`).
 - `src/lib/empresa/` — usuarios de la empresa, cambio transaccional de roles y

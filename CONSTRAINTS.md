@@ -64,8 +64,9 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   `Origin` a mano y no reproduce cómo la calcula el navegador (fallo real en
   `company-admin-onboarding`).
 - **MUST** el NIF se normaliza a mayúsculas y sin espacios antes de guardarlo;
-  el CHECK `empresas_nif_normalizado` y el índice único lo respaldan. Motivo:
-  evitar duplicados por variantes de escritura.
+  los CHECK `empresas_nif_normalizado` y `clientes_nif_normalizado` y los
+  índices únicos lo respaldan (en empresas, único global; en clientes, único
+  por empresa). Motivo: evitar duplicados por variantes de escritura.
 - **MUST** la configuración de empresa (`/panel/empresa`) se escribe solo
   sobre `session.empresa.id` (vía `requireEmpresaId`) y nunca toca `plan_id`
   ni `estado`; los campos `empresaId`/`id` del formulario se ignoran. Motivo:
@@ -77,6 +78,22 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** las features de factura bloquean la emisión si `serie_factura` o
   `tarifa_horaria` de la empresa son nulas (NULL = sin configurar). Motivo: no
   se inventa una serie ni se factura a 0 €.
+- **MUST** toda tabla hija de un recurso de tenant lleva `empresa_id` y un FK
+  compuesto `(padre_id, empresa_id) → padre(id, empresa_id)` cuando Prisma lo
+  permite (como `sedes` y `contactos` hacia `clientes`). Si Prisma no lo
+  permite (relación opcional que reutiliza una columna obligatoria, como
+  `contactos.sede_id`), la regla se aplica en el repositorio, se cubre con
+  `test:db` y se documenta. Motivo: que PostgreSQL impida mezclar empresas
+  aunque falle el código.
+- **MUST** los ids recibidos en formularios o en la URL (cliente, sede,
+  contacto…) se resuelven siempre con `tenantFilter` (y con el padre cuando lo
+  hay), y un recurso de otra empresa se trata como inexistente: 404 en las
+  páginas y `?error=no-encontrado` en los route handlers, nunca un 403 que
+  revele que existe. Motivo: no filtrar la existencia de datos de otro tenant.
+- **MUST** los datos fiscales del destinatario de una factura (razón social,
+  NIF, dirección de facturación) viven solo en `clientes`; la factura de
+  trabajo referenciará `cliente_id`, nunca `sede_id`. Motivo: el cliente es el
+  sujeto fiscal y la sede solo el lugar de la intervención.
 - **MUST** las acciones de superadmin quedan pendientes de auditoría avanzada
   (`audit-trail-view`); hasta entonces no se añaden efectos que dependan de un
   registro de auditoría. Motivo: riesgo aceptado y documentado en
@@ -122,6 +139,13 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** reevaluar RLS antes de producción o al añadir la primera tabla
   operativa con consultas cruzadas. Motivo: el riesgo aceptado de fuga entre
   tenants debe revisarse con auth y datos reales.
+- Reevaluación registrada en `client-records` (primeras tablas operativas:
+  `clientes`, `sedes`, `contactos`): RLS sigue diferida porque no hay
+  consultas cruzadas entre empresas fuera de `src/lib/superadmin/*`, todas las
+  consultas de clientes usan `tenantFilter` con aislamiento A/B en `test:db` y
+  los FK compuestos impiden escrituras mezcladas. Pendiente de confirmar antes
+  de producción o con la primera consulta cruzada (p. ej.
+  `superadmin-tenant-view`).
 
 ## Esquema y migraciones
 
@@ -133,9 +157,10 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** los CHECK que Prisma no modela (importe no negativo, email
   normalizado, coherencia superadmin/empresa, NIF normalizado, fechas de
   invitación, superadmin sin roles, roles sin nulos, serie de factura
-  normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$` y tarifa horaria `> 0`) se mantienen
-  en SQL y se cubren con `npm run test:db` al cambiar el esquema. Motivo:
-  Prisma no los regenera.
+  normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$`, tarifa horaria de empresa `> 0`, NIF
+  de cliente normalizado, tarifa de cliente no negativa, contacto con teléfono
+  o email y email de contacto normalizado) se mantienen en SQL y se cubren con
+  `npm run test:db` al cambiar el esquema. Motivo: Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
 - **MUST** solo un usuario `es_superadmin = true` puede tener `empresa_id`

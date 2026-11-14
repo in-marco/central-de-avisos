@@ -113,6 +113,15 @@ Notas:
   usuario sin roles y superadmin reciben 403 en la página y en
   `POST /api/panel/empresa`; la navegación solo muestra «Empresa» a quien
   tiene el permiso. Oficina y técnico no leen la configuración en este slice.
+- «Gestionar clientes, sedes y contactos» (permiso `clientes.gestionar`,
+  Administrador y Oficina, incluidas sus combinaciones con Técnico): ven
+  «Clientes» en la navegación y usan `/panel/clientes` para dar de alta,
+  editar y listar clientes de su empresa con sus sedes y contactos. Técnico, usuario sin roles
+  y superadmin reciben 403 en las páginas y en `/api/panel/clientes/*`; un
+  anónimo va al login con `next`. Un cliente, sede o contacto de otra empresa
+  se trata como inexistente (404 o `?error=no-encontrado`), sin revelar que
+  existe. El superadmin no ve clientes desde `/panel` (queda para
+  `superadmin-tenant-view`).
 - Siguen fuera de este slice: rol Cliente y portal (`client-portal-invitation`),
   invitar usuarios de oficina o técnicos, desactivar usuarios
   (`user-deactivation`), auditoría de cambios de rol, reenvío de invitaciones,
