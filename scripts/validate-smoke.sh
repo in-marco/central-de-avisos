@@ -150,6 +150,12 @@ expect_status GET /panel/usuarios 307
 expect_status GET /api/panel/usuarios/roles 405
 expect_status POST /api/panel/usuarios/roles 403 -H "Origin: http://evil.example"
 expect_status POST /api/panel/usuarios/roles 307 -H "Origin: ${BASE_URL}"
+# Configuración de empresa: sin sesión, página y API. Ningún POST es válido,
+# así que no muta datos.
+expect_status GET /panel/empresa 307
+expect_status GET /api/panel/empresa 405
+expect_status POST /api/panel/empresa 403 -H "Origin: http://evil.example"
+expect_status POST /api/panel/empresa 307 -H "Origin: ${BASE_URL}"
 
 if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   [[ -n "${SMOKE_EMAIL:-}" && -n "${SMOKE_PASSWORD:-}" ]] \
@@ -171,6 +177,8 @@ if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   # El superadmin no tiene permisos de empresa.
   expect_status GET /panel/usuarios 403 -b "$COOKIE_JAR"
   expect_status POST /api/panel/usuarios/roles 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status GET /panel/empresa 403 -b "$COOKIE_JAR"
+  expect_status POST /api/panel/empresa 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status POST /api/auth/logout 303 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status GET /panel 307
 fi
@@ -193,6 +201,7 @@ if [[ -n "${SMOKE_NORMAL_EMAIL:-}" || -n "${SMOKE_NORMAL_PASSWORD:-}" ]]; then
   expect_status POST /api/superadmin/empresas 403 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
   # SMOKE_NORMAL_* debe ser un administrador de empresa.
   expect_status GET /panel/usuarios 200 -b "$NORMAL_COOKIE_JAR"
+  expect_status GET /panel/empresa 200 -b "$NORMAL_COOKIE_JAR"
   # Revoca la sesión para no dejar sesiones activas de verificación.
   expect_status POST /api/auth/logout 303 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 fi
@@ -216,6 +225,8 @@ check_role_without_user_management() {
   expect_status GET /panel 200 -b "$ROLE_COOKIE_JAR"
   expect_status GET /panel/usuarios 403 -b "$ROLE_COOKIE_JAR"
   expect_status POST /api/panel/usuarios/roles 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status GET /panel/empresa 403 -b "$ROLE_COOKIE_JAR"
+  expect_status POST /api/panel/empresa 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status POST /api/auth/logout 303 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 }
 

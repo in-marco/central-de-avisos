@@ -195,14 +195,24 @@
       "company-admin-onboarding",
       "role-based-permissions"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Editar NIF, dirección, serie, tarifa y modo fiscal; recargar y comprobar persistencia.",
       "Comprobar que un usuario que no es administrador recibe 403.",
       "Validar errores de formato en NIF y tarifa."
     ],
-    "evidence": [],
-    "notes": "El modo VERIFACTU activo queda fuera del MVP; ver docs/build-brief.md."
+    "evidence": [
+      "2026-11-14 (implementer, autoverificación; pendiente de validación independiente). Migración 20261114180000_empresa_facturacion: enum modo_fiscal ('NO_VERIFACTU'), serie_factura TEXT y tarifa_horaria DECIMAL(10,2) nullables, modo_fiscal NOT NULL DEFAULT, CHECK empresas_serie_factura_formato y empresas_tarifa_horaria_positiva (psql \\d empresas).",
+      "BD del worktree: db:deploy (6 migraciones), db:status 'Database schema is up to date!', prisma migrate diff --from-config-datasource --to-schema 'No difference detected.'; test:db 8 archivos / 88 tests verdes; db:seed dos veces idempotente con Empresa Demo serie F, tarifa 45.00, NO_VERIFACTU.",
+      "Base vacía temporal central_de_avisos_cbs_verify: db:deploy aplicó las 6 migraciones, db:status up to date, migrate diff sin diferencias, test:db 88/88; base eliminada después.",
+      "Gate: lint sin errores ni warnings, typecheck limpio, npm test 14 archivos / 173 tests, build con /panel/empresa y /api/panel/empresa dinámicas; env -u DATABASE_URL bash init.sh exit 0.",
+      "validate-smoke.sh con SMOKE_PORT=3103 y SMOKE_* de superadmin, administrador, oficina y técnico: todo OK (anónimo /panel/empresa 307, GET /api/panel/empresa 405, Origin ajeno 403, POST anónimo 307; admin 200; superadmin, oficina y técnico 403 en página y POST).",
+      "Matriz HTTP (curl --max-time 10, puerto 3103): anónimo 307 a /login?next=%2Fpanel%2Fempresa; GET API 405 Allow: POST; superadmin/oficina/sin roles/técnico 403 en GET y POST con BD sin cambios; administrador y encargado 200 y «Empresa» en la navegación. Errores 303: nif (1234), tarifa (0, -5, abc, 12,345, 10000), serie (vacía, ABCDEFGHIJK, 'F A'), email, modo (VERIFACTU y vacío), campos (nombre y dirección vacíos), nif-duplicado; md5 de empresas idéntico antes y después. POST válido del encargado con empresaId/id de otra empresa → ?ok=guardado y la otra empresa sin cambios. Aviso «Pendiente de configurar» con serie y tarifa nulas y campos vacíos.",
+      "Navegador real (Edge headless --remote-debugging-port=9231, next start 3103), 16/16: login desde el formulario; «Empresa» con aria-current=page; teclado real con b 87654321, Facturas@Empresa.ES, f-, 42,5; POST con Origin http://localhost:3103 → 303 Location /panel/empresa?ok=guardado y «Configuración guardada.» visible; tras recargar B87654321, facturas@empresa.es, F-, 42,50 y razón social nueva en la cabecera; psql 'Instalaciones Norte SL|B87654321|...|F-|42.50|NO_VERIFACTU'; NIF 1234 y tarifa 0 con role=alert, aria-invalid=true, aria-describedby con *-error y BD sin cambios; VERIFACTU deshabilitado; oficina sin «Empresa» y 403 con h1 «403 · No autorizado»; a 390 px scrollWidth 390, inputs/botón/radios/navegación 48 px, foco solid 2px rgb(192, 138, 62) y tabulación nombre → nif → email → dirección → serie → tarifa → modo → Guardar.",
+      "Limpieza: next start y Edge terminados, puertos 3103 y 9231 libres, cookies/logs/perfil de Edge/scripts temporales borrados, base temporal eliminada, 0 sesiones activas; BD del worktree restaurada con el seed.",
+      "2026-11-14 validación independiente (validator): veredicto accept. init.sh verde (173 tests, build); test:db 88/88 en la base del worktree y en base vacía temporal central_de_avisos_cbs_val (eliminada); db:seed x2 idempotente; validate-smoke.sh con cuatro roles en 3103; matriz HTTP (anónimo 307, GET 405, Origin ajeno/null 403, superadmin/oficina/técnico/sin roles 403, admin/encargado 303 ?ok=guardado, errores nif/tarifa/serie/email/modo/campos/nif-duplicado con md5 de empresas idéntico, JSON 400, aislamiento con empresaId/planId/estado ajenos sin efecto); Edge headless CDP: envío real con Origin, persistencia tras recargar confirmada con psql, errores con role=alert/aria-invalid, VERIFACTU deshabilitado, 390 px sin desbordes, tabulación y foco latón. Notas bajas: transition-colors anima outline-color; isSameOrigin acepta POST sin Origin (patrón previo)."
+    ],
+    "notes": "El modo VERIFACTU activo queda fuera del MVP; ver docs/build-brief.md. La BD solo admite NO_VERIFACTU. Sin auditoría de cambios fiscales (riesgo en docs/risks-and-open-questions.md). El seed localiza Empresa Demo por NIF B12345678."
   },
   {
     "id": "client-records",

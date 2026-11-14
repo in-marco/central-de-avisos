@@ -6,7 +6,8 @@ import { hashPassword } from "../src/lib/auth/password";
 /**
  * Seed mínimo e idempotente para probar el login y los roles. Cada ejecución
  * restaura los roles demo (admin, oficina, técnico y encargado
- * ADMINISTRADOR+TECNICO) y deja al superadmin sin roles.
+ * ADMINISTRADOR+TECNICO), la configuración de facturación de Empresa Demo
+ * (serie F, 45,00 €/h, NO_VERIFACTU) y deja al superadmin sin roles.
  *
  * No forma parte de `init.sh` ni del build. Se ejecuta manualmente después de
  * `npm run db:deploy` con `npm run db:seed`. Solo para desarrollo local.
@@ -91,6 +92,9 @@ async function main() {
           emailFacturacion: "facturacion@demo.local",
           planId: plan.id,
           estado: "ACTIVA",
+          serieFactura: "F",
+          tarifaHoraria: "45.00",
+          modoFiscal: "NO_VERIFACTU",
         },
         create: {
           nombre: "Empresa Demo",
@@ -98,6 +102,9 @@ async function main() {
           direccionFiscal: "Calle Mayor 1, 28013 Madrid",
           emailFacturacion: "facturacion@demo.local",
           planId: plan.id,
+          serieFactura: "F",
+          tarifaHoraria: "45.00",
+          modoFiscal: "NO_VERIFACTU",
         },
       });
 
@@ -170,6 +177,9 @@ async function main() {
     console.log("Seed completado sin duplicar datos.");
     console.log(`  Plan:       ${result.plan.nombre}`);
     console.log(`  Empresa:    ${result.empresa.nombre} (${result.empresa.nif})`);
+    console.log(
+      `  Facturación: serie ${result.empresa.serieFactura}, tarifa ${result.empresa.tarifaHoraria?.toFixed(2)} €/h, ${result.empresa.modoFiscal}`,
+    );
     console.log(`  Admin:      ${result.admin.email} (${result.admin.roles.join("+")})`);
     for (const miembro of result.miembros) {
       console.log(`  Equipo:     ${miembro.email} (${miembro.roles.join("+")})`);

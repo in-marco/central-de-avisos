@@ -79,7 +79,10 @@ npm run db:seed        # datos demo locales (idempotente, nunca en producción)
 `SEED_ENCARGADO_EMAIL` opcionales) para el equipo demo de Empresa Demo:
 `oficina@demo.local` (OFICINA), `tecnico@demo.local` (TECNICO) y
 `encargado@demo.local` (ADMINISTRADOR+TECNICO). Cada ejecución restaura los
-roles demo. No forma parte de `init.sh` ni del gate.
+roles demo y la facturación de Empresa Demo (serie `F`, tarifa `45.00`,
+`NO_VERIFACTU`). El seed localiza Empresa Demo por el NIF `B12345678`: si se
+cambió el NIF desde `/panel/empresa`, restáuralo antes de volver a sembrar o se
+creará una segunda empresa. No forma parte de `init.sh` ni del gate.
 
 Instalación y gate estándar (no necesita base de datos):
 
@@ -112,6 +115,8 @@ npm run dev
 - Panel privado: `http://localhost:3000/panel` (requiere sesión)
 - Usuarios y roles: `http://localhost:3000/panel/usuarios` (solo permiso
   `usuarios.gestionar`, es decir, rol `ADMINISTRADOR`; el resto recibe 403)
+- Configuración de empresa: `http://localhost:3000/panel/empresa` (solo
+  permiso `empresa.configurar`, rol `ADMINISTRADOR`; el resto recibe 403)
 - Panel de proveedor: `http://localhost:3000/superadmin` (solo
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
@@ -136,7 +141,9 @@ Los usuarios de empresa tienen roles combinables (`ADMINISTRADOR`, `OFICINA`,
 `TECNICO`) leídos de la base de datos en cada petición; la matriz de permisos
 vive en `src/lib/authz/permissions.ts` y los guards son `requirePermission`
 (páginas) y `authorizeCompanyRequest` (route handlers). El administrador cambia
-roles en `/panel/usuarios` (`POST /api/panel/usuarios/roles`).
+roles en `/panel/usuarios` (`POST /api/panel/usuarios/roles`) y la
+configuración fiscal, serie, tarifa horaria y modo NO-VERIFACTU en
+`/panel/empresa` (`POST /api/panel/empresa`).
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.

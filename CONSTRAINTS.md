@@ -66,6 +66,17 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** el NIF se normaliza a mayúsculas y sin espacios antes de guardarlo;
   el CHECK `empresas_nif_normalizado` y el índice único lo respaldan. Motivo:
   evitar duplicados por variantes de escritura.
+- **MUST** la configuración de empresa (`/panel/empresa`) se escribe solo
+  sobre `session.empresa.id` (vía `requireEmpresaId`) y nunca toca `plan_id`
+  ni `estado`; los campos `empresaId`/`id` del formulario se ignoran. Motivo:
+  el plan y el estado los gestiona el proveedor y el cliente no elige tenant.
+- **MUST** `modo_fiscal` solo admite `NO_VERIFACTU`, en el enum de la base de
+  datos y en la validación del servidor; añadir `VERIFACTU` exige una feature
+  o ADR que lo active (`ALTER TYPE ... ADD VALUE`). Motivo: el MVP es
+  NO-VERIFACTU y no debe existir ningún camino para activarlo por error.
+- **MUST** las features de factura bloquean la emisión si `serie_factura` o
+  `tarifa_horaria` de la empresa son nulas (NULL = sin configurar). Motivo: no
+  se inventa una serie ni se factura a 0 €.
 - **MUST** las acciones de superadmin quedan pendientes de auditoría avanzada
   (`audit-trail-view`); hasta entonces no se añaden efectos que dependan de un
   registro de auditoría. Motivo: riesgo aceptado y documentado en
@@ -121,8 +132,10 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   historial de migración.
 - **MUST** los CHECK que Prisma no modela (importe no negativo, email
   normalizado, coherencia superadmin/empresa, NIF normalizado, fechas de
-  invitación, superadmin sin roles y roles sin nulos) se mantienen en SQL y se cubren con `npm run test:db` al cambiar
-  el esquema. Motivo: Prisma no los regenera.
+  invitación, superadmin sin roles, roles sin nulos, serie de factura
+  normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$` y tarifa horaria `> 0`) se mantienen
+  en SQL y se cubren con `npm run test:db` al cambiar el esquema. Motivo:
+  Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
 - **MUST** solo un usuario `es_superadmin = true` puede tener `empresa_id`

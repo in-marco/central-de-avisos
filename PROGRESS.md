@@ -5,10 +5,10 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `role-based-permissions` en `accepted`.
-- Current next ready feature: `company-billing-settings` y `client-records` (ambas listas en paralelo).
+- Current feature: `company-billing-settings` en `accepted` (validación independiente con veredicto accept).
+- Current next ready feature: `client-records` avanza en paralelo en otro worktree; tras integrar ambas ramas, la siguiente feature lista de `feature_list.json`.
 - Current blocker: none.
-- Last verified at: 2026-11-14 (role-based-permissions aceptada por validación independiente con Edge headless, entorno local Windows)
+- Last verified at: 2026-11-14 (company-billing-settings aceptada por el validator con Edge headless en 3103, entorno local Windows)
 - Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío, regeneración ni email real (una invitación perdida o caducada no se puede sustituir desde la interfaz); el token de invitación viaja en el path del enlace (mitigado con un solo uso, Referrer-Policy same-origin, no-store y noindex); la aceptación de la invitación no deja auditoría; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
@@ -242,3 +242,24 @@
 - Files or artifacts updated: `feature_list.json` (`accepted`), `PROGRESS.md`, `CONSTRAINTS.md` (excepción de `/panel` nombrada), `prisma/schema.prisma` (solo formato).
 - Known risk or unresolved issue: `/api/panel/usuarios/roles` acepta POST sin cabecera Origin (patrón previo de `isSameOrigin`, mitigado por `SameSite=Lax`).
 - Next best step: `company-billing-settings` y `client-records`, que pueden ir en paralelo con github-flow.
+
+### Session 018
+
+- Date: 2026-11-14
+- Goal: implementar `company-billing-settings` según `docs/specs/company-billing-settings.md` (worktree `feature/company-billing-settings`, base `central_de_avisos_company_billing_settings`, puerto 3103, CDP 9231).
+- Completed: migración `20261114180000_empresa_facturacion` (enum `modo_fiscal` con solo `NO_VERIFACTU`, `serie_factura` y `tarifa_horaria` nullables, CHECK de formato de serie y tarifa positiva); `src/lib/empresa/configuracion-validation.ts` (puro) y `configuracion.ts` (lectura y escritura por `requireEmpresaId`, sin tocar `plan_id`/`estado`, `nif-duplicado`); `/panel/empresa` (tres `fieldset`, aviso «Pendiente de configurar», errores inline y resumen, VERIFACTU deshabilitado) y `POST /api/panel/empresa`; entrada «Empresa» en la navegación; seed con serie `F`, tarifa `45.00` y `NO_VERIFACTU`; `validate-smoke.sh` ampliado; `init.sh` (solo mensaje final); documentación durable.
+- Hallazgo: `normalizeNif` compartido solo hace `trim`, así que `b 87654321` fallaba. La validación de la configuración quita antes todos los espacios del NIF (anotado en la spec; `normalizeNif` no cambia).
+- Verification run: lint (0 warnings), typecheck, `npm test` 173, build e `init.sh` con `env -u DATABASE_URL` exit 0; `db:deploy`/`db:status`/`migrate diff` sin deriva; `test:db` 88/88 en la base del worktree y en una base vacía temporal `central_de_avisos_cbs_verify` (eliminada); `db:seed` x2 idempotente; `validate-smoke.sh` con los cuatro roles en 3103; matriz HTTP por rol y por código de error con instantánea md5 de `empresas`; Edge headless por CDP 16/16.
+- Evidence captured: ver `feature_list.json` (`company-billing-settings`).
+- Files or artifacts updated: `prisma/schema.prisma`, `prisma/migrations/20261114180000_empresa_facturacion/migration.sql`, `prisma/seed.ts`, `src/lib/empresa/configuracion-validation.ts`, `configuracion-validation.test.ts`, `configuracion.ts`, `configuracion.db.test.ts`, `src/lib/authz/navigation.ts`, `navigation.test.ts`, `panel-guards.test.ts`, `src/db/schema.db.test.ts`, `src/db/tenant-isolation.db.test.ts`, `src/app/panel/empresa/page.tsx`, `src/app/api/panel/empresa/route.ts`, `scripts/validate-smoke.sh`, `init.sh`, `AGENTS.md`, `ARCHITECTURE.md`, `CONSTRAINTS.md`, `README.md`, `docs/domain-model.md`, `docs/user-and-access-model.md`, `docs/risks-and-open-questions.md`, `docs/specs/company-billing-settings.md`, `feature_list.json`, `PROGRESS.md`.
+- Known risk or unresolved issue: cambios fiscales sin auditoría (`audit-trail-view`); el mensaje de NIF duplicado revela que el NIF existe; cambiar la serie tras emitir queda para `invoice-signed-pdf`; el seed localiza Empresa Demo por NIF `B12345678` (si se cambia, restaurarlo antes de sembrar); `client-records` toca los mismos archivos compartidos (`schema.prisma`, `navigation.ts`, `seed.ts`, `validate-smoke.sh`, docs): al integrar la segunda rama, rebase y timestamp de migración posterior.
+- Next best step: validación independiente de `company-billing-settings` (incluido navegador real en 3103).
+
+### Session 019
+
+- Date: 2026-11-14
+- Goal: validación independiente de `company-billing-settings` (feature-flow, worktree `feature/company-billing-settings`).
+- Completed: el validator devolvió `accept` sin hallazgos críticos, altos ni medios; estado pasado a `accepted`.
+- Verification run: `env -u DATABASE_URL bash init.sh` (lint, typecheck, 173 tests, build); `db:deploy`/`db:status`/`migrate diff` sin deriva; `test:db` 88/88 en la base del worktree y en una base vacía temporal `central_de_avisos_cbs_val` (eliminada); `db:seed` x2 idempotente; `validate-smoke.sh` con cuatro roles en 3103; matriz HTTP por rol, origen y código de error con md5 de `empresas`; aislamiento con `empresaId`/`planId`/`estado` ajenos; Edge headless por CDP (envío real, persistencia tras recargar, errores accesibles, 390 px, tabulación y foco).
+- Known risk or unresolved issue: notas bajas del validator: `transition-colors` anima también `outline-color` (el foco tarda ~150 ms en verse latón); `isSameOrigin` acepta POST sin `Origin` (patrón previo, mitigado por `SameSite=Lax`). Siguen los riesgos de la sesión 018.
+- Next best step: integrar la rama (sesión principal) y continuar con la siguiente feature lista.

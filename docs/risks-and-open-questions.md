@@ -12,7 +12,10 @@
 - Umbral de confianza de la IA y reglas de validación por campo para decidir cuándo se guarda o se revisa.
 - Comportamiento exacto de la numeración ante anulación y posibles huecos.
 - Momento de congelar la tarifa: al aprobar el parte o al emitir la factura.
-- Formato de serie y numeración por empresa y año.
+- Numeración por empresa y año, y si la serie incluye el año
+  (`invoice-signed-pdf`). El formato de la serie como prefijo ya está resuelto
+  (ver «Resueltas»). También queda para `invoice-signed-pdf` decidir si se
+  bloquea cambiar la serie después de la primera factura emitida.
 - Retención y borrado de fotos de partes y PDFs.
 - Contrato de tratamiento de datos y región del proveedor de IA.
 - Política de reenvío/regeneración de invitaciones caducadas (la caducidad ya está fijada en 7 días).
@@ -100,6 +103,20 @@
   NIF que solo difieren en mayúsculas o espacios, la normalización chocaría con
   el índice único. Mitigación: revisar duplicados antes de desplegar; en local
   solo existía el NIF demo.
+- **Cambios fiscales sin auditoría:** el administrador puede cambiar en
+  `/panel/empresa` la razón social, el NIF (con el que el proveedor le factura
+  la cuota), la serie y la tarifa sin registro append-only. Mitigación: queda
+  en `audit-trail-view`; solo el rol Administrador puede hacerlo y la tarifa se
+  congela al aprobar cada parte.
+- **NIF duplicado revela su existencia:** el mensaje «Ese NIF ya está
+  registrado en la plataforma» confirma que otra empresa lo usa. Es inevitable
+  con el índice único global; el mensaje no dice qué empresa es.
+- **Cambiar la serie tras emitir:** hoy nada impide cambiar la serie después de
+  emitir facturas, porque todavía no se emiten. `invoice-signed-pdf` debe
+  decidir si lo bloquea.
+- **Tope de tarifa:** la tarifa horaria es > 0 y ≤ 9999,99 €/h, sin IVA. Si
+  negocio necesita tarifa 0 u otro tope, hay que cambiar el CHECK y la
+  validación.
 
 ## Research Tasks
 
@@ -126,3 +143,7 @@
 - **Autorización de superadmin:** `forbidden()` con `experimental.authInterrupts`
   funciona de forma fiable en Next.js 16.4.6 y devuelve 403; no se usó la
   alternativa de render manual. Ver `ARCHITECTURE.md`.
+- **Formato de serie de factura:** prefijo de 1 a 10 caracteres (`A-Z`, `0-9`
+  y guion, sin empezar por guion), normalizado a mayúsculas y respaldado por
+  el CHECK `empresas_serie_factura_formato`. El año y la numeración siguen
+  abiertos (ver arriba).
