@@ -22,6 +22,7 @@ export type NavItem = {
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/panel", label: "Inicio", requiere: null },
   { href: "/panel/usuarios", label: "Usuarios", requiere: "usuarios.gestionar" },
+  { href: "/panel/empresa", label: "Empresa", requiere: "empresa.configurar" },
   { href: "/superadmin", label: "Panel de proveedor", requiere: "superadmin" },
 ];
 

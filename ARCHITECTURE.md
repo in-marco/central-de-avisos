@@ -4,7 +4,8 @@ Estado actual: fundamento técnico con autenticación propia y superficie de
 proveedor. La app es un monolito Next.js con App Router y una única superficie
 de datos PostgreSQL. Existe login con email y contraseña, sesiones opacas
 revocables, un panel privado con navegación por permisos, roles de empresa
-combinables con gestión en `/panel/usuarios` y un panel de superadmin para
+combinables con gestión en `/panel/usuarios`, configuración fiscal y de
+facturación de la empresa en `/panel/empresa` y un panel de superadmin para
 planes, alta de empresas e invitación de su administrador; todavía no hay
 dominio operativo.
 
@@ -15,7 +16,8 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   ├─ src/lib/     lógica de aplicación testeable sin servidor
   │    ├─ src/lib/auth/       autenticación y sesiones (server-only en current-session)
   │    ├─ src/lib/authz/      matriz de permisos y navegación (puros) y guards de servidor
-  │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles), con tenantFilter
+  │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles, configuración
+  │    │                      de facturación), con tenantFilter o requireEmpresaId
   │    └─ src/lib/superadmin/ autorización, planes, altas e invitaciones
   └─ src/db/      acceso a datos y contrato de tenant
        └─ src/generated/prisma/ cliente Prisma generado (no versionado)
@@ -56,7 +58,13 @@ src/app/          rutas HTTP y páginas (borde de entrada)
 - `empresas`: raíz del tenant; NIF único normalizado (`nif = upper(btrim(nif))`),
   `direccion_fiscal` nullable en BD (obligatoria al crear desde superadmin),
   email de facturación, FK `plan_id` con `ON DELETE/UPDATE RESTRICT`, estado
-  `ACTIVA`/`SUSPENDIDA` e índice por plan.
+  `ACTIVA`/`SUSPENDIDA` e índice por plan. Configuración de facturación
+  (migración `20261114180000_empresa_facturacion`): `serie_factura TEXT`
+  nullable con CHECK `empresas_serie_factura_formato`
+  (`^[A-Z0-9][A-Z0-9-]{0,9}$`), `tarifa_horaria DECIMAL(10,2)` nullable con
+  CHECK `empresas_tarifa_horaria_positiva` (`> 0`) y `modo_fiscal` del enum
+  `modo_fiscal`, que solo tiene `NO_VERIFACTU` (`NOT NULL DEFAULT`). NULL en
+  serie o tarifa significa «sin configurar».
 - `usuarios`: email único global, `empresa_id` nullable con FK `Restrict`,
   `password_hash` nullable (invitados sin contraseña), estado
   `ACTIVO`/`INACTIVO`, `es_superadmin`, `roles rol_usuario[] NOT NULL DEFAULT
@@ -163,6 +171,21 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   revierte si la empresa quedaría sin administradores `ACTIVO`. Responde 303
   con `?ok=roles` o `?error=sin-roles|rol-invalido|propio-admin|no-encontrado|
   ultimo-admin|servicio`; `GET` devuelve 405.
+- **Configuración de empresa:** `/panel/empresa` (permiso
+  `empresa.configurar`) muestra un formulario con datos fiscales, serie,
+  tarifa horaria y modo fiscal (radio VERIFACTU deshabilitado) y el aviso
+  «Pendiente de configurar» si serie o tarifa son nulas. `POST
+  /api/panel/empresa` comprueba mismo origen, aplica
+  `authorizeCompanyRequest`, valida con `parseBillingSettingsForm`
+  (`src/lib/empresa/configuracion-validation.ts`, puro: NIF sin espacios y en
+  mayúsculas, email en minúsculas, serie en mayúsculas, tarifa como cadena
+  decimal con `BigInt`, solo `NO_VERIFACTU`) y guarda con
+  `updateCompanyBillingSettings` (`src/lib/empresa/configuracion.ts`), que
+  escribe por `id = requireEmpresaId(session.empresa.id)` solo los campos de
+  configuración (nunca `plan_id` ni `estado`) y traduce un NIF de otra empresa
+  a `nif-duplicado`. Responde 303 con `?ok=guardado` o
+  `?error=campos|nif|email|serie|tarifa|modo|nif-duplicado|servicio`; `GET`
+  devuelve 405. Los campos `empresaId`/`id` del formulario se ignoran.
 - El alta de empresa crea al administrador invitado con
   `roles = {ADMINISTRADOR}` en la misma transacción.
 - Fuera de este slice: rol `CLIENTE` y portal, invitar o desactivar usuarios
@@ -211,7 +234,7 @@ empresa y con las futuras invitaciones y roles.
   empresa. Una sesión caducada, revocada, con usuario `INACTIVO` o con empresa
   `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
 - **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth;
-  privadas `/panel`, `/panel/usuarios` y `/superadmin`. Cada página de
+  privadas `/panel`, `/panel/usuarios`, `/panel/empresa` y `/superadmin`. Cada página de
   `/panel` llama a `requireSession` o `requirePermission`;
   `/superadmin` añade `requireSuperadmin`, que redirige a
   `/login?next=...` si no hay sesión y usa `forbidden()` si el usuario no es

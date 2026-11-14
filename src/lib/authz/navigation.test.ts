@@ -13,8 +13,12 @@ function labels(session: AuthzSubject | null) {
 }
 
 describe("navegación del panel por permisos", () => {
-  it("el administrador ve Inicio y Usuarios", () => {
-    expect(labels(company(["ADMINISTRADOR"]))).toEqual(["Inicio", "Usuarios"]);
+  it("el administrador ve Inicio, Usuarios y Empresa", () => {
+    expect(labels(company(["ADMINISTRADOR"]))).toEqual([
+      "Inicio",
+      "Usuarios",
+      "Empresa",
+    ]);
   });
 
   it("oficina y técnico solo ven Inicio", () => {
@@ -23,10 +27,11 @@ describe("navegación del panel por permisos", () => {
     expect(labels(company(["OFICINA", "TECNICO"]))).toEqual(["Inicio"]);
   });
 
-  it("ADMINISTRADOR+TECNICO ve Usuarios", () => {
+  it("ADMINISTRADOR+TECNICO ve Usuarios y Empresa", () => {
     expect(labels(company(["ADMINISTRADOR", "TECNICO"]))).toEqual([
       "Inicio",
       "Usuarios",
+      "Empresa",
     ]);
   });
 
@@ -43,10 +48,14 @@ describe("navegación del panel por permisos", () => {
   });
 
   it("marca como activa solo la ruta correspondiente", () => {
-    const [inicio, usuarios] = NAV_ITEMS;
+    const [inicio, usuarios, empresa] = NAV_ITEMS;
     expect(isNavItemActive(inicio!, "/panel")).toBe(true);
     expect(isNavItemActive(inicio!, "/panel/usuarios")).toBe(false);
     expect(isNavItemActive(usuarios!, "/panel/usuarios")).toBe(true);
     expect(isNavItemActive(usuarios!, "/panel/usuarios-x")).toBe(false);
+    expect(empresa?.href).toBe("/panel/empresa");
+    expect(isNavItemActive(empresa!, "/panel/empresa")).toBe(true);
+    expect(isNavItemActive(empresa!, "/panel/usuarios")).toBe(false);
+    expect(isNavItemActive(inicio!, "/panel/empresa")).toBe(false);
   });
 });

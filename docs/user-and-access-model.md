@@ -106,6 +106,13 @@ Notas:
   queda pendiente de una superficie de proveedor específica.
 - El alta de empresa crea al administrador invitado con el rol
   `ADMINISTRADOR`.
+- «Configurar empresa, tarifas y series» (permiso `empresa.configurar`, solo
+  Administrador, incluido el encargado `ADMINISTRADOR+TECNICO`) se ejerce en
+  `/panel/empresa`: datos fiscales, serie, tarifa horaria y modo
+  NO-VERIFACTU, siempre sobre la empresa de la sesión. Oficina, técnico,
+  usuario sin roles y superadmin reciben 403 en la página y en
+  `POST /api/panel/empresa`; la navegación solo muestra «Empresa» a quien
+  tiene el permiso. Oficina y técnico no leen la configuración en este slice.
 - Siguen fuera de este slice: rol Cliente y portal (`client-portal-invitation`),
   invitar usuarios de oficina o técnicos, desactivar usuarios
   (`user-deactivation`), auditoría de cambios de rol, reenvío de invitaciones,

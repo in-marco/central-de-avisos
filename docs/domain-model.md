@@ -9,6 +9,13 @@
 - Modo fiscal (`NO_VERIFACTU` en el MVP).
 - Tarifa horaria por defecto.
 - Serie y siguiente número de factura de trabajo.
+- Implementado (`company-billing-settings`): `serie_factura` es un prefijo de
+  hasta 10 caracteres (`A-Z`, `0-9` y guion, sin empezar por guion),
+  `tarifa_horaria` es `DECIMAL(10,2)` sin IVA (> 0 y ≤ 9999,99 en la
+  validación) y `modo_fiscal` es un enum con un único valor `NO_VERIFACTU`.
+  Serie y tarifa son nullables: NULL significa «sin configurar» y la
+  facturación debe bloquear. El administrador las edita en `/panel/empresa`.
+  El siguiente número, el año y la numeración llegan con `invoice-signed-pdf`.
 
 ### Usuario
 - Email único global, contraseña, estado.

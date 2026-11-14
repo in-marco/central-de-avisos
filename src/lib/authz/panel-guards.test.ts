@@ -28,12 +28,12 @@ function findPages(dir: string): string[] {
 describe("guards de las páginas de /panel", () => {
   const pages = findPages(PANEL_DIR);
 
-  it("encuentra al menos /panel y /panel/usuarios", () => {
+  it("encuentra al menos /panel, /panel/usuarios y /panel/empresa", () => {
     const relative = pages.map((page) =>
       path.relative(PANEL_DIR, page).split(path.sep).join("/"),
     );
     expect(relative).toEqual(
-      expect.arrayContaining(["page.tsx", "usuarios/page.tsx"]),
+      expect.arrayContaining(["page.tsx", "usuarios/page.tsx", "empresa/page.tsx"]),
     );
   });
 

@@ -44,6 +44,14 @@ enum TipoInvitacion {
   @@map("tipo_invitacion")
 }
 
+// Modo fiscal de la empresa. El MVP solo admite NO_VERIFACTU; añadir
+// VERIFACTU exige una feature/ADR con ALTER TYPE ... ADD VALUE.
+enum ModoFiscal {
+  NO_VERIFACTU
+
+  @@map("modo_fiscal")
+}
+
 model Plan {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombre         String   @unique
@@ -65,6 +73,11 @@ model Empresa {
   emailFacturacion String        @map("email_facturacion")
   planId           String        @map("plan_id") @db.Uuid
   estado           EstadoEmpresa @default(ACTIVA)
+  // Configuración de facturación. NULL = sin configurar (CHECK de formato de
+  // serie y de tarifa positiva en la migración empresa_facturacion).
+  serieFactura     String?       @map("serie_factura")
+  tarifaHoraria    Decimal?      @map("tarifa_horaria") @db.Decimal(10, 2)
+  modoFiscal       ModoFiscal    @default(NO_VERIFACTU) @map("modo_fiscal")
   creadoEn         DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn    DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 

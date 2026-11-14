@@ -11,6 +11,8 @@ import {
   listCompanyUsers,
   updateUserRolesInTransaction,
 } from "@/lib/empresa/usuarios";
+import { updateCompanyBillingSettings } from "@/lib/empresa/configuracion";
+import { parseBillingSettingsForm } from "@/lib/empresa/configuracion-validation";
 
 afterAll(async () => {
   await disconnectDb();
@@ -190,6 +192,67 @@ describe("aislamiento multiempresa", () => {
     ]);
     expect(result.update).toEqual({ ok: false, error: "no-encontrado" });
     expect(result.tecnicoBDespues.roles).toEqual(["TECNICO"]);
+  });
+
+  it("un administrador de A que guarda la configuración no modifica B", async () => {
+    const suffix = uniqueSuffix();
+
+    const result = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan facturación aislamiento ${suffix}`, importeMensual: "10.00" },
+      });
+      const empresaA = await tx.empresa.create({
+        data: {
+          nombre: `Empresa facturación A ${suffix}`,
+          nif: `FA${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-fa-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+      const empresaB = await tx.empresa.create({
+        data: {
+          nombre: `Empresa facturación B ${suffix}`,
+          nif: `FB${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-fb-${suffix}@example.com`,
+          planId: plan.id,
+          serieFactura: "B",
+          tarifaHoraria: "30.00",
+        },
+      });
+
+      // El formulario intenta apuntar a B: el campo se ignora y la escritura
+      // usa solo el empresaId de la sesión (A).
+      const data = new FormData();
+      data.set("empresaId", empresaB.id);
+      data.set("id", empresaB.id);
+      data.set("nombre", "Nombre nuevo A");
+      data.set("nif", "12345678Z");
+      data.set("direccionFiscal", "Calle A 1");
+      data.set("emailFacturacion", "a@example.com");
+      data.set("serieFactura", "A");
+      data.set("tarifaHoraria", "50");
+      data.set("modoFiscal", "NO_VERIFACTU");
+      const parsed = parseBillingSettingsForm(data);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+
+      // NIF que no colisiona con datos demo: se reutiliza el de A normalizado.
+      const values = { ...parsed.value, nif: empresaA.nif };
+      const update = await updateCompanyBillingSettings(tx, empresaA.id, values);
+      const aDespues = await tx.empresa.findUniqueOrThrow({ where: { id: empresaA.id } });
+      const bDespues = await tx.empresa.findUniqueOrThrow({ where: { id: empresaB.id } });
+
+      return { empresaB, update, aDespues, bDespues };
+    });
+
+    expect(result.update).toEqual({ ok: true });
+    expect(result.aDespues.nombre).toBe("Nombre nuevo A");
+    expect(result.aDespues.serieFactura).toBe("A");
+    expect(result.bDespues.nombre).toBe(result.empresaB.nombre);
+    expect(result.bDespues.nif).toBe(result.empresaB.nif);
+    expect(result.bDespues.serieFactura).toBe("B");
+    expect(result.bDespues.tarifaHoraria?.toFixed(2)).toBe("30.00");
   });
 
   it("requireEmpresaId impide consultar sin contexto de empresa", () => {

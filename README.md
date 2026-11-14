@@ -104,7 +104,10 @@ Con el seed aplicado, los usuarios demo son:
 | `encargado@demo.local` | Administrador + Técnico | `SEED_EQUIPO_PASSWORD` |
 | `superadmin@demo.local` | Proveedor SaaS (sin roles de empresa) | `SEED_SUPERADMIN_PASSWORD` |
 
-Cada ejecución del seed restaura esos roles. Inicia sesión en
+Cada ejecución del seed restaura esos roles y la facturación de Empresa Demo
+(serie `F`, tarifa `45,00 €/h`, modo `NO_VERIFACTU`). El seed localiza Empresa
+Demo por el NIF `B12345678`; si lo cambias desde `/panel/empresa`, restáuralo
+antes de volver a sembrar. Inicia sesión en
 <http://localhost:3000/login> y abre <http://localhost:3000/panel>.
 
 - La cookie `central_sesion` es `HttpOnly`, `SameSite=Lax`, dura 12 h y solo se
@@ -145,8 +148,9 @@ Los usuarios de empresa tienen roles combinables (`Administrador`, `Oficina`,
 `src/lib/authz/permissions.ts`. Los roles se leen de la base de datos en cada
 petición: un cambio surte efecto sin volver a iniciar sesión.
 
-- La navegación del panel muestra «Inicio» a todos, «Usuarios» solo a quien
-  puede gestionar usuarios y «Panel de proveedor» solo al superadmin. Ocultar
+- La navegación del panel muestra «Inicio» a todos, «Usuarios» y «Empresa»
+  solo a quien puede gestionar usuarios o configurar la empresa (rol
+  Administrador) y «Panel de proveedor» solo al superadmin. Ocultar
   no es la defensa: cada página y acción se autoriza en servidor.
 - `/panel/usuarios` (rol Administrador) lista los usuarios de la empresa y
   permite cambiar sus roles. No se puede dejar a un usuario sin roles, quitarse
@@ -157,6 +161,26 @@ petición: un cambio surte efecto sin volver a iniciar sesión.
   login.
 - Fuera de este slice: rol Cliente y portal, invitar o desactivar usuarios de
   empresa y auditoría de los cambios de rol.
+
+## Configuración de la empresa
+
+`/panel/empresa` (solo rol Administrador, permiso `empresa.configurar`) edita
+la razón social, el NIF, la dirección fiscal, el email de facturación, la serie
+de factura, la tarifa horaria por defecto (sin IVA) y el modo fiscal.
+
+- El NIF se guarda en mayúsculas y sin espacios, el email en minúsculas y la
+  serie en mayúsculas (hasta 10 caracteres: letras, números y guion). La
+  tarifa admite coma o punto, hasta dos decimales, y debe ser mayor que 0 y
+  como máximo 9999,99.
+- Solo existe el modo NO-VERIFACTU; VERIFACTU aparece deshabilitado y el
+  servidor y la base de datos lo rechazan.
+- Si falta la serie o la tarifa, la página muestra «Pendiente de configurar».
+- Un NIF que ya usa otra empresa se rechaza con un mensaje genérico. Tras un
+  error se vuelven a mostrar los valores guardados.
+- Oficina, técnico, un usuario sin roles y el superadmin reciben 403 en la
+  página y en `POST /api/panel/empresa`; un anónimo va al login.
+- Fuera de este slice: numeración de facturas, IVA configurable, tarifas por
+  cliente y auditoría de los cambios.
 
 ## Activación del administrador invitado
 
@@ -181,6 +205,8 @@ npm run dev
 - Login: <http://localhost:3000/login>
 - Panel privado: <http://localhost:3000/panel> (requiere sesión)
 - Usuarios y roles: <http://localhost:3000/panel/usuarios> (solo administrador)
+- Configuración de empresa: <http://localhost:3000/panel/empresa> (solo
+  administrador)
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
@@ -245,7 +271,9 @@ Se ejecutan en serie dentro de transacciones con rollback y cubren constraints,
 FKs, aislamiento entre dos empresas, autenticación (credenciales, estados,
 caducidad, revocación y token hasheado), superadmin (planes, altas,
 duplicados, plan inactivo, invitación hasheada, estados y rollback) y roles
-(CHECK, validaciones, aislamiento y último administrador en concurrencia).
+(CHECK, validaciones, aislamiento y último administrador en concurrencia) y
+configuración de facturación (columnas, enum, CHECK de serie y tarifa,
+normalización, NIF duplicado y aislamiento).
 
 Smoke HTTP con `next start` (Git Bash; `SMOKE_*` opcionales para las
 comprobaciones autenticadas por rol):
@@ -265,11 +293,14 @@ bash scripts/validate-smoke.sh
 - `src/app/health/route.ts` — endpoint `GET /health`.
 - `src/app/login/` — formulario de login server-rendered.
 - `src/app/panel/` — layout con navegación por permisos, panel, `usuarios/`
-  (roles) y `forbidden.tsx` (403 propio).
+  (roles), `empresa/` (configuración de facturación) y `forbidden.tsx` (403
+  propio).
 - `src/app/api/panel/usuarios/roles/` — `POST` de cambio de roles.
+- `src/app/api/panel/empresa/` — `POST` de configuración de la empresa.
 - `src/lib/authz/` — matriz de permisos, navegación y guards
   (`requirePermission`, `authorizeCompanyRequest`).
-- `src/lib/empresa/` — usuarios de la empresa y cambio transaccional de roles.
+- `src/lib/empresa/` — usuarios de la empresa, cambio transaccional de roles y
+  configuración de facturación (validación pura y repositorio).
 - `src/app/api/auth/` — route handlers de login y logout (`POST`).
 - `src/lib/auth/` — hash scrypt, tokens, sesiones, cookie, same-origin y
   validación de `next`.

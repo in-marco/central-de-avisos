@@ -792,3 +792,148 @@ describe("roles de usuario", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("configuración de facturación de empresas", () => {
+  it("añade serie_factura, tarifa_horaria y modo_fiscal con su tipo y default", async () => {
+    const rows = await getDb().$queryRaw<
+      Array<{
+        column_name: string;
+        data_type: string;
+        udt_name: string;
+        is_nullable: string;
+        column_default: string | null;
+        numeric_precision: number | null;
+        numeric_scale: number | null;
+      }>
+    >`
+      SELECT column_name, data_type, udt_name, is_nullable, column_default,
+             numeric_precision, numeric_scale
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'empresas'
+        AND column_name IN ('serie_factura', 'tarifa_horaria', 'modo_fiscal')
+      ORDER BY column_name
+    `;
+
+    expect(rows).toHaveLength(3);
+    const [modo, serie, tarifa] = rows;
+
+    expect(modo).toMatchObject({
+      column_name: "modo_fiscal",
+      udt_name: "modo_fiscal",
+      is_nullable: "NO",
+    });
+    expect(modo?.column_default).toContain("NO_VERIFACTU");
+    expect(serie).toMatchObject({
+      column_name: "serie_factura",
+      data_type: "text",
+      is_nullable: "YES",
+      column_default: null,
+    });
+    expect(tarifa).toMatchObject({
+      column_name: "tarifa_horaria",
+      data_type: "numeric",
+      is_nullable: "YES",
+      numeric_precision: 10,
+      numeric_scale: 2,
+    });
+
+    const labels = await getDb().$queryRaw<Array<{ enumlabel: string }>>`
+      SELECT e.enumlabel
+      FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+      WHERE t.typname = 'modo_fiscal'
+      ORDER BY e.enumsortorder
+    `;
+
+    expect(labels.map((row) => row.enumlabel)).toEqual(["NO_VERIFACTU"]);
+  });
+
+  it("incluye los CHECK de formato de serie y tarifa positiva", async () => {
+    const rows = await getDb().$queryRaw<Array<{ conname: string }>>`
+      SELECT conname
+      FROM pg_constraint
+      WHERE conrelid = 'empresas'::regclass
+        AND contype = 'c'
+        AND conname IN (
+          'empresas_serie_factura_formato',
+          'empresas_tarifa_horaria_positiva'
+        )
+      ORDER BY conname
+    `;
+
+    expect(rows.map((row) => row.conname)).toEqual([
+      "empresas_serie_factura_formato",
+      "empresas_tarifa_horaria_positiva",
+    ]);
+  });
+
+  function empresaConFacturacion(data: {
+    serieFactura?: string;
+    tarifaHoraria?: string;
+  }) {
+    const suffix = uniqueSuffix();
+
+    return inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan facturación ${suffix}`, importeMensual: "10.00" },
+      });
+
+      return tx.empresa.create({
+        data: {
+          nombre: `Empresa facturación ${suffix}`,
+          nif: `FAC${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-fac-${suffix}@example.com`,
+          planId: plan.id,
+          ...data,
+        },
+      });
+    });
+  }
+
+  it("acepta una serie normalizada y una tarifa positiva", async () => {
+    const empresa = await empresaConFacturacion({
+      serieFactura: "F-2026",
+      tarifaHoraria: "45.00",
+    });
+
+    expect(empresa.serieFactura).toBe("F-2026");
+    expect(empresa.tarifaHoraria?.toFixed(2)).toBe("45.00");
+    expect(empresa.modoFiscal).toBe("NO_VERIFACTU");
+  });
+
+  it.each([["f"], ["F 1"], ["-F"], ["F/1"], ["ABCDEFGHIJK"], [""]])(
+    "rechaza la serie %j",
+    async (serieFactura) => {
+      await expect(empresaConFacturacion({ serieFactura })).rejects.toThrow();
+    },
+  );
+
+  it.each([["0"], ["-5.00"]])("rechaza la tarifa %s", async (tarifaHoraria) => {
+    await expect(empresaConFacturacion({ tarifaHoraria })).rejects.toThrow();
+  });
+
+  it("rechaza un modo fiscal fuera del enum", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan modo ${suffix}`, importeMensual: "10.00" },
+        });
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa modo ${suffix}`,
+            nif: `MOD${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-modo-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+
+        return tx.$executeRaw`
+          UPDATE empresas SET modo_fiscal = 'VERIFACTU' WHERE id = ${empresa.id}::uuid
+        `;
+      }),
+    ).rejects.toThrow();
+  });
+});
