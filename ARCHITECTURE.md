@@ -142,7 +142,7 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   `SUSPENDIDA` no activa al usuario ni crea sesión; la invitación de una
   empresa suspendida sigue pendiente.
 - `next.config.ts` añade a `/invitacion/:path*` `Referrer-Policy:
-  no-referrer`, `Cache-Control: no-store` y `X-Robots-Tag: noindex, nofollow`,
+  same-origin`, `Cache-Control: no-store` y `X-Robots-Tag: noindex, nofollow`,
   porque el token viaja en el path del enlace. El token va en el cuerpo del
   POST y nunca en la redirección final.
 

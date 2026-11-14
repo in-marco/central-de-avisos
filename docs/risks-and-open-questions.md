@@ -68,7 +68,7 @@
 - **Token de invitación en el path del enlace:** el enlace `/invitacion/<token>`
   lleva el token en la URL, que puede quedar en el historial del navegador o
   en logs de un proxy. Mitigación: un solo uso, 7 días, `Referrer-Policy:
-  no-referrer`, `no-store`, `noindex`, token en el cuerpo del POST y nunca en
+  same-origin`, `no-store`, `noindex`, token en el cuerpo del POST y nunca en
   la redirección final; `next start` no lo registra (verificado). Revisar los
   logs del proxy al desplegar.
 - **Aceptación sin auditoría:** la activación del administrador no deja un

@@ -51,7 +51,7 @@
   reglas de composición (en línea con NIST SP 800-63B). Se aplica al activar
   una invitación; el login acepta cualquier longitud de 1 a 128 para no
   bloquear cuentas existentes.
-- **Invitaciones:** `/invitacion/<token>` público con cabeceras `no-referrer`,
+- **Invitaciones:** `/invitacion/<token>` público con cabeceras `same-origin`,
   `no-store` y `noindex`; la aceptación es una transacción de un solo uso que
   crea la sesión directamente.
 - **Revocación:** logout marca `revocada_en`; usuario `INACTIVO`, empresa

@@ -50,10 +50,18 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** las contraseñas nuevas tienen entre 12 y 128 caracteres y se
   confirman (`validateNewPassword`); el login no aplica esta política. Motivo:
   no bloquear cuentas existentes al endurecer las altas.
-- **MUST** `/invitacion/*` responde con `Referrer-Policy: no-referrer`,
+- **MUST** `/invitacion/*` responde con `Referrer-Policy: same-origin`,
   `Cache-Control: no-store` y `X-Robots-Tag: noindex`; el token viaja en el
   cuerpo del POST y nunca en la redirección final. Motivo: el token está en el
   path del enlace y no debe filtrarse por Referer, cachés o buscadores.
+- **MUST NOT** usar `Referrer-Policy: no-referrer` en páginas con formularios
+  que hacen POST a endpoints protegidos con `isSameOrigin`. Motivo: con
+  `no-referrer` el navegador envía `Origin: null` en el POST y el endpoint
+  responde 403; `same-origin` evita la fuga a terceros sin romper el control.
+- **MUST** los formularios nuevos se verifican al menos una vez enviándolos
+  desde un navegador real, no solo con `curl`. Motivo: `curl` fija la cabecera
+  `Origin` a mano y no reproduce cómo la calcula el navegador (fallo real en
+  `company-admin-onboarding`).
 - **MUST** el NIF se normaliza a mayúsculas y sin espacios antes de guardarlo;
   el CHECK `empresas_nif_normalizado` y el índice único lo respaldan. Motivo:
   evitar duplicados por variantes de escritura.

@@ -138,6 +138,11 @@ expect_status POST /api/superadmin/empresas 307 -H "Origin: ${BASE_URL}"
 # mismo origen. No crea datos.
 expect_status GET "/invitacion/$(printf 'x%.0s' $(seq 1 43))" 404
 expect_status GET /api/invitaciones/aceptar 405
+# Regresión: con Referrer-Policy no-referrer el navegador envía Origin: null en
+# el POST del formulario y la aceptación falla con 403.
+referrer_policy="$(curl -s -D - -o /dev/null --max-time 10 "${BASE_URL}/invitacion/$(printf 'x%.0s' $(seq 1 43))" | tr -d '\r' | awk -F': ' 'tolower($1) == "referrer-policy" {print $2}')"
+[[ "$referrer_policy" == "same-origin" ]] || fail "Referrer-Policy de /invitacion: esperado same-origin, recibido ${referrer_policy:-ninguna}"
+echo "OK   Referrer-Policy de /invitacion -> same-origin"
 expect_status POST /api/invitaciones/aceptar 403 -H "Origin: http://evil.example"
 
 if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then

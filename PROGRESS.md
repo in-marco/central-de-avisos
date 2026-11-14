@@ -5,11 +5,11 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `company-admin-onboarding` en `accepted`.
+- Current feature: `company-admin-onboarding` en `accepted` (revalidada con navegador real tras reparar el 403 del formulario).
 - Current next ready feature: `role-based-permissions`.
 - Current blocker: none.
-- Last verified at: 2026-11-14 (company-admin-onboarding aceptada por validación independiente, entorno local Windows)
-- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío, regeneración ni email real (una invitación perdida o caducada no se puede sustituir desde la interfaz); el token de invitación viaja en el path del enlace (mitigado con un solo uso, no-referrer, no-store y noindex); la aceptación de la invitación no deja auditoría; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
+- Last verified at: 2026-11-14 (revalidación independiente de company-admin-onboarding con Edge headless, entorno local Windows)
+- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío, regeneración ni email real (una invitación perdida o caducada no se puede sustituir desde la interfaz); el token de invitación viaja en el path del enlace (mitigado con un solo uso, Referrer-Policy same-origin, no-store y noindex); la aceptación de la invitación no deja auditoría; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
 
@@ -195,3 +195,27 @@
   - `isSameOrigin` acepta peticiones sin `Origin` (diseño previo).
   - Las páginas de invitación rechazada responden 200.
 - Next best step: commits de la spec y de la feature; después, `feature-spec` para `role-based-permissions`.
+
+### Session 014
+
+- Date: 2026-11-14
+- Goal: reparar el fallo reportado por el usuario al activar la cuenta desde el navegador.
+- Problem: al enviar la contraseña en `/invitacion/<token>` aparecía «Origen no permitido» (403).
+- Cause: `Referrer-Policy: no-referrer` en `/invitacion/:path*`. Con esa política, el navegador envía `Origin: null` en el POST del formulario y `isSameOrigin` lo rechaza. Ni los smokes ni la validación lo detectaron porque `curl` fija `Origin` a mano.
+- Completed: `Referrer-Policy: same-origin` en `next.config.ts` (sin Referer a terceros y con `Origin` normal hacia la propia app); comprobación de regresión en `validate-smoke.sh`; dos reglas nuevas en `CONSTRAINTS.md` (no usar `no-referrer` con formularios protegidos por `isSameOrigin` y verificar los formularios nuevos con navegador real); hallazgo en la spec; docs actualizadas.
+- Verification run: Edge headless por CDP antes y después del cambio (antes `Origin: null` y 403; después `Origin: http://localhost:3100`, 303 a `/panel` y usuario `ACTIVO`); lint, typecheck, `npm test` (62), build, `test:db` (52) y `validate-smoke.sh` en verde.
+- Known risk or unresolved issue: la validación de la Session 013 no usó navegador. En la BD hay una empresa creada por el usuario al probar («Tecno SAT», invitado `admin@tecnosat.es` pendiente) que se dejó intacta.
+- Next best step: revalidación independiente de `company-admin-onboarding` que incluya un envío real desde navegador.
+
+### Session 015
+
+- Date: 2026-11-14
+- Goal: revalidación independiente de `company-admin-onboarding` tras la reparación de la Session 014.
+- Result: `accept`, sin hallazgos bloqueantes. El usuario también confirmó en su navegador que la activación funciona.
+- Verification run: `init.sh` exit 0, `test:db` 52/52, `validate-smoke.sh` OK y un E2E con Edge headless por CDP (17/17). El formulario se envió desde el navegador real con `Origin: http://localhost:3100`, la activación terminó en `/panel` con la empresa y se comprobaron los errores de contraseña, el reuso, el logout y el login.
+- Files or artifacts updated: `feature_list.json` (`accepted`), `PROGRESS.md`.
+- Known risk or unresolved issue (observaciones no bloqueantes):
+  - `validate-smoke.sh` deja 2 sesiones revocadas por ejecución.
+  - No hay un E2E de navegador persistente: la verificación con navegador es una regla de `CONSTRAINTS.md` y un paso manual hasta que exista un harness.
+  - Siguen pendientes las observaciones de la Session 013 (desfase horario de una hora en las fechas, `test:db` contra la base de desarrollo).
+- Next best step: `feature-spec` para `role-based-permissions`.

@@ -53,7 +53,7 @@ para entrar en el panel de mi empresa sin pedir credenciales a nadie.
 8. **Contraseña inválida.** Una contraseña de menos de 12 o más de 128 caracteres, o una confirmación distinta, se rechaza con 303 a la página de invitación y un error visible. La invitación sigue pendiente y el usuario `INACTIVO`.
 9. **Empresa suspendida.** Dada una invitación pendiente de una empresa `SUSPENDIDA`, se muestra «La empresa no está activa» y no se acepta. La invitación sigue pendiente para cuando la empresa se reactive.
 10. **Doble envío concurrente.** Dados dos POST simultáneos con el mismo token, solo uno acepta. El otro termina como «ya utilizada» y solo existe una sesión creada por la aceptación.
-11. **Token fuera de la URL de destino.** El token no aparece en la redirección final, en logs ni en base de datos (solo su SHA-256). La página de invitación responde con `Referrer-Policy: no-referrer`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`.
+11. **Token fuera de la URL de destino.** El token no aparece en la redirección final, en logs ni en base de datos (solo su SHA-256). La página de invitación responde con `Referrer-Policy: same-origin`, `Cache-Control: no-store` y `X-Robots-Tag: noindex`.
 12. **Mismo origen.** Un POST de aceptación con `Origin` distinto devuelve 403 y no modifica nada. `GET` sobre el endpoint de aceptación devuelve 405.
 13. **Gate sin BD.** Dado un clon sin PostgreSQL ni `DATABASE_URL`, `init.sh` pasa lint, typecheck, tests unitarios y build sin conectarse a la base.
 
@@ -86,7 +86,7 @@ para entrar en el panel de mi empresa sin pedir credenciales a nadie.
 
 ### Open Unknowns
 
-- **Token en la ruta:** el token viaja en el path del enlace (inherente al enlace). Se mitiga con `Referrer-Policy: no-referrer` y `no-store`, y enviando el token en el cuerpo del POST, no en la URL del POST. `next start` no registra paths por defecto; confirmarlo en el smoke.
+- **Token en la ruta:** el token viaja en el path del enlace (inherente al enlace). Se mitiga con `Referrer-Policy: same-origin` y `no-store`, y enviando el token en el cuerpo del POST, no en la URL del POST. `next start` no registra paths por defecto; confirmarlo en el smoke.
 - **Concurrencia:** confirmar en PostgreSQL real que `updateMany` condicionado (`aceptada_en IS NULL AND expira_en > now`) deja a un solo ganador.
 
 ## Technical Approach
@@ -117,7 +117,7 @@ para entrar en el panel de mi empresa sin pedir credenciales a nadie.
    - Si el estado no permite aceptar, responde 303 a `/invitacion/<token>`, que muestra el estado.
    - Ante un error inesperado, responde 303 a `/invitacion/<token>?error=servicio`.
    - Nunca registra token, email ni contraseña.
-6. **Cabeceras.** `next.config.ts` añade `headers()` para `/invitacion/:path*` con `Referrer-Policy: no-referrer`, `Cache-Control: no-store` y `X-Robots-Tag: noindex, nofollow`.
+6. **Cabeceras.** `next.config.ts` añade `headers()` para `/invitacion/:path*` con `Referrer-Policy: same-origin`, `Cache-Control: no-store` y `X-Robots-Tag: noindex, nofollow`.
 7. **Superadmin.** No cambia código: `getInvitationStatus` ya devuelve `ACEPTADA` y el detalle lista el estado del usuario. Se verifica en el smoke.
 8. **Aislamiento y auditoría.** La sesión creada pasa por `getSessionByToken`, que exige usuario `ACTIVO` y empresa `ACTIVA`. No se añade auditoría (riesgo ya registrado).
 
@@ -189,7 +189,7 @@ npm run lint && npm run typecheck && npm test && npm run build
 ### Smoke HTTP (Git Bash, `next start` en 3100, `curl --max-time 10`)
 
 1. Login del superadmin, alta de una empresa de prueba y lectura del enlace de invitación desde el HTML del detalle.
-2. `GET /invitacion/<token>`: 200, empresa y email en HTML, cabeceras `Referrer-Policy: no-referrer`, `Cache-Control: no-store` y `X-Robots-Tag`.
+2. `GET /invitacion/<token>`: 200, empresa y email en HTML, cabeceras `Referrer-Policy: same-origin`, `Cache-Control: no-store` y `X-Robots-Tag`.
 3. POST con contraseña corta y con confirmación distinta: 303 con `?error=`, y en BD la invitación sigue pendiente y el usuario `INACTIVO`.
 4. POST con `Origin` ajeno: 403. `GET /api/invitaciones/aceptar`: 405.
 5. POST válido: 303 a `/panel` con `Set-Cookie: central_sesion`. `/panel` es 200 y contiene el nombre de la empresa. `/superadmin` responde 403.
@@ -209,13 +209,23 @@ La invitación caducada y la empresa suspendida se cubren en `test:db`, porque p
 - Consulta `psql` con `aceptada_en`, estado `ACTIVO`, `password_hash` con prefijo `scrypt$` y número de sesiones.
 - Confirmación de limpieza de datos y procesos.
 
+## Implementación: hallazgos verificados
+
+- **Referrer-Policy y mismo origen:** la primera versión usaba
+  `Referrer-Policy: no-referrer`. Con ella, Edge envía `Origin: null` en el POST
+  del formulario y `/api/invitaciones/aceptar` respondía 403 «Origen no
+  permitido»; los smokes con `curl` no lo detectaron porque fijan `Origin` a
+  mano. Se cambió a `same-origin`, que no envía Referer a terceros y mantiene un
+  `Origin` normal en peticiones a la propia app. Verificado con Edge headless
+  (CDP): `Origin: http://localhost:3100`, 303 a `/panel` y usuario `ACTIVO`.
+
 ## Validator Checklist
 
 - [ ] La aceptación es atómica y de un solo uso, también con concurrencia.
 - [ ] Una invitación caducada, ya usada, desconocida o de empresa suspendida no activa al usuario ni crea sesión.
 - [ ] Contraseña de 12 a 128 caracteres con confirmación; el login no cambia.
 - [ ] Tras aceptar, el usuario entra en `/panel` con su empresa y recibe 403 en `/superadmin`.
-- [ ] El token no está en BD (solo el hash), ni en la URL de destino, ni en logs. Hay cabeceras `no-referrer`, `no-store` y `noindex`.
+- [ ] El token no está en BD (solo el hash), ni en la URL de destino, ni en logs. Hay cabeceras `same-origin`, `no-store` y `noindex`.
 - [ ] Mismo origen y 405 en el endpoint.
 - [ ] No se añadieron roles, reenvío, email real, recuperación de contraseña ni migraciones.
 - [ ] `init.sh` y el build pasan sin BD; documentación, `PROGRESS.md` y `feature_list.json` actualizados.
