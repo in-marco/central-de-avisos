@@ -28,6 +28,16 @@ enum EstadoUsuario {
   @@map("estado_usuario")
 }
 
+// Roles de empresa combinables. Los permisos se derivan en código
+// (src/lib/authz/permissions.ts). El superadmin nunca tiene roles (CHECK).
+enum RolUsuario {
+  ADMINISTRADOR
+  OFICINA
+  TECNICO
+
+  @@map("rol_usuario")
+}
+
 enum TipoInvitacion {
   ADMINISTRADOR_EMPRESA
 
@@ -74,6 +84,7 @@ model Usuario {
   passwordHash  String?       @map("password_hash")
   estado        EstadoUsuario @default(ACTIVO)
   esSuperadmin  Boolean       @default(false) @map("es_superadmin")
+  roles         RolUsuario[]  @default([])
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 

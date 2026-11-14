@@ -5,10 +5,10 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `company-admin-onboarding` en `accepted` (revalidada con navegador real tras reparar el 403 del formulario).
-- Current next ready feature: `role-based-permissions`.
+- Current feature: `role-based-permissions` en `accepted`.
+- Current next ready feature: `company-billing-settings` y `client-records` (ambas listas en paralelo).
 - Current blocker: none.
-- Last verified at: 2026-11-14 (revalidación independiente de company-admin-onboarding con Edge headless, entorno local Windows)
+- Last verified at: 2026-11-14 (role-based-permissions aceptada por validación independiente con Edge headless, entorno local Windows)
 - Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío, regeneración ni email real (una invitación perdida o caducada no se puede sustituir desde la interfaz); el token de invitación viaja en el path del enlace (mitigado con un solo uso, Referrer-Policy same-origin, no-store y noindex); la aceptación de la invitación no deja auditoría; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
@@ -219,3 +219,26 @@
   - No hay un E2E de navegador persistente: la verificación con navegador es una regla de `CONSTRAINTS.md` y un paso manual hasta que exista un harness.
   - Siguen pendientes las observaciones de la Session 013 (desfase horario de una hora en las fechas, `test:db` contra la base de desarrollo).
 - Next best step: `feature-spec` para `role-based-permissions`.
+
+### Session 016
+
+- Date: 2026-11-14
+- Goal: implementar `role-based-permissions` según `docs/specs/role-based-permissions.md` (worktree `feature/role-based-permissions`, base `central_de_avisos_role_based_permissions`, puerto 3101).
+- Completed: migración `20261114120000_roles_usuario` (enum `rol_usuario`, `usuarios.roles` NOT NULL default `{}`, backfill `{ADMINISTRADOR}` y CHECK superadmin sin roles / sin nulos); matriz pura `src/lib/authz/permissions.ts` (`can`, `permissionsFor`, `normalizeRoles`, `formatRoles`), navegación `navigation.ts` y guards `guards.ts` (`requirePermission`, `authorizeCompanyRequest`); roles en la sesión (leídos en cada petición, `[]` para el superadmin); `src/lib/empresa/usuarios.ts` (listado con `tenantFilter`, cambio transaccional con `FOR UPDATE`, `propio-admin` y último administrador); `/panel/usuarios`, `POST /api/panel/usuarios/roles`, `src/app/panel/forbidden.tsx`, navegación del panel con `aria-current` y roles en «Tu cuenta»; alta de empresa con `ADMINISTRADOR`; seed con oficina, técnico y encargado; `validate-smoke.sh` con `SMOKE_OFICINA_*`/`SMOKE_TECNICO_*`; documentación durable.
+- Hallazgo: el `requireSession("/panel")` del layout redirigía antes que la página y el anónimo de `/panel/usuarios` perdía su `next`. El layout ahora solo lee la sesión; cada página llama a su guard y `panel-guards.test.ts` lo exige (regla en `CONSTRAINTS.md`, detalle en la spec).
+- Verification run: lint, typecheck, `npm test` (132), build e `init.sh` sin `.env`/`DATABASE_URL` exit 0; `test:db` 70 en la base del worktree y en una base vacía temporal (eliminada); `db:seed` x2 idempotente; `validate-smoke.sh` con los cuatro roles en 3101; matriz HTTP 68/68; Edge headless por CDP 40/40 (formulario real, Origin, 303, 403 propio, 390 px, foco).
+- Evidence captured: ver `feature_list.json` (`role-based-permissions`).
+- Files or artifacts updated: `prisma/schema.prisma`, `prisma/migrations/20261114120000_roles_usuario/migration.sql`, `prisma/seed.ts`, `.env.example`, `src/lib/authz/*`, `src/lib/empresa/*`, `src/lib/auth/session.ts`, `src/lib/auth/auth.db.test.ts`, `src/lib/superadmin/companies.ts`, `companies.db.test.ts`, `authorization.ts` (comentario), `src/db/schema.db.test.ts`, `src/db/tenant-isolation.db.test.ts`, `src/app/panel/layout.tsx`, `page.tsx`, `forbidden.tsx`, `_components/panel-nav.tsx`, `usuarios/page.tsx`, `src/app/api/panel/usuarios/roles/route.ts`, `scripts/validate-smoke.sh`, `init.sh` (mensaje final), `AGENTS.md`, `ARCHITECTURE.md`, `CONSTRAINTS.md`, `README.md`, `docs/domain-model.md`, `docs/user-and-access-model.md`, `docs/risks-and-open-questions.md`, `docs/specs/role-based-permissions.md`, `feature_list.json`, `PROGRESS.md`.
+- Known risk or unresolved issue: los cambios de rol no se auditan (`audit-trail-view`); ninguna feature del backlog invita o crea usuarios de oficina o técnicos (hoy solo el seed); una petición en vuelo puede completarse justo tras perder un rol (el recuento de administradores lo acota); el `Location` de los route handlers usa `localhost` aunque se acceda por `127.0.0.1` (patrón previo); `.env` local del worktree necesita `SEED_EQUIPO_PASSWORD` para `db:seed`.
+- Next best step: validación independiente de `role-based-permissions` (incluido navegador real en 3101); si se acepta, `feature-spec` para `company-billing-settings`.
+
+### Session 017
+
+- Date: 2026-11-14
+- Goal: validación independiente de `role-based-permissions` (github-flow, issue #2).
+- Context: la sesión `claude -p` del worktree implementó la feature, pero su validador devolvió `block` porque la lista de permisos de la sesión impedía usar Edge, el smoke con variables y las bases temporales. La sesión principal relanzó la validación con un subagente `validator` con esos accesos.
+- Result: `accept`; sin hallazgos críticos, altos ni medios.
+- Verification run: Edge headless por CDP (login, cambio de roles con clic real, intento de quitarse el propio Administrador, 403 de Oficina y vista a 390 px); `validate-smoke.sh` 40/40; migración desde base vacía y `test:db` 70/70; `init.sh` sin `DATABASE_URL` (132 tests y build); matriz HTTP por rol.
+- Files or artifacts updated: `feature_list.json` (`accepted`), `PROGRESS.md`, `CONSTRAINTS.md` (excepción de `/panel` nombrada), `prisma/schema.prisma` (solo formato).
+- Known risk or unresolved issue: `/api/panel/usuarios/roles` acepta POST sin cabecera Origin (patrón previo de `isSameOrigin`, mitigado por `SameSite=Lax`).
+- Next best step: `company-billing-settings` y `client-records`, que pueden ir en paralelo con github-flow.

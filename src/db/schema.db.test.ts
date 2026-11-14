@@ -135,7 +135,9 @@ describe("esquema base", () => {
         'planes_importe_mensual_no_negativo',
         'sesiones_expiracion_posterior',
         'usuarios_email_normalizado',
-        'usuarios_superadmin_empresa_coherente'
+        'usuarios_roles_sin_nulos',
+        'usuarios_superadmin_empresa_coherente',
+        'usuarios_superadmin_sin_roles'
       )
       ORDER BY conname
     `;
@@ -147,7 +149,9 @@ describe("esquema base", () => {
       "planes_importe_mensual_no_negativo",
       "sesiones_expiracion_posterior",
       "usuarios_email_normalizado",
+      "usuarios_roles_sin_nulos",
       "usuarios_superadmin_empresa_coherente",
+      "usuarios_superadmin_sin_roles",
     ]);
   });
 
@@ -188,6 +192,7 @@ describe("esquema base", () => {
     expect(empresa.estado).toBe("ACTIVA");
     expect(usuario.estado).toBe("ACTIVO");
     expect(usuario.esSuperadmin).toBe(false);
+    expect(usuario.roles).toEqual([]);
     expect(usuario.empresaId).toBe(empresa.id);
     expect(usuario.creadoEn).toBeInstanceOf(Date);
     expect(usuario.actualizadoEn).toBeInstanceOf(Date);
@@ -661,5 +666,129 @@ describe("esquema base", () => {
     });
 
     expect(restantes).toBe(0);
+  });
+});
+
+describe("roles de usuario", () => {
+  it("la columna roles es rol_usuario[] NOT NULL con default vacío", async () => {
+    const rows = await getDb().$queryRaw<
+      Array<{ udt_name: string; is_nullable: string; column_default: string | null }>
+    >`
+      SELECT udt_name, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'usuarios'
+        AND column_name = 'roles'
+    `;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.udt_name).toBe("_rol_usuario");
+    expect(rows[0]?.is_nullable).toBe("NO");
+    expect(rows[0]?.column_default).toContain("ARRAY[]");
+
+    const labels = await getDb().$queryRaw<Array<{ enumlabel: string }>>`
+      SELECT e.enumlabel
+      FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+      WHERE t.typname = 'rol_usuario'
+      ORDER BY e.enumsortorder
+    `;
+
+    expect(labels.map((row) => row.enumlabel)).toEqual([
+      "ADMINISTRADOR",
+      "OFICINA",
+      "TECNICO",
+    ]);
+  });
+
+  it("guarda roles combinados en un usuario de empresa", async () => {
+    const suffix = uniqueSuffix();
+
+    const usuario = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan roles ${suffix}`, importeMensual: "10.00" },
+      });
+      const empresa = await tx.empresa.create({
+        data: {
+          nombre: `Empresa roles ${suffix}`,
+          nif: `R${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-roles-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+
+      return tx.usuario.create({
+        data: {
+          empresaId: empresa.id,
+          email: `roles-${suffix}@example.com`,
+          nombre: "Encargado",
+          roles: ["ADMINISTRADOR", "TECNICO"],
+        },
+      });
+    });
+
+    expect(usuario.roles).toEqual(["ADMINISTRADOR", "TECNICO"]);
+  });
+
+  it("rechaza un superadmin con roles (usuarios_superadmin_sin_roles)", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      getDb().usuario.create({
+        data: {
+          empresaId: null,
+          email: `superadmin-roles-${suffix}@example.com`,
+          nombre: "Superadmin con roles",
+          esSuperadmin: true,
+          roles: ["ADMINISTRADOR"],
+        },
+      }),
+    ).rejects.toThrow();
+
+    const superadmin = await inRollback((tx) =>
+      tx.usuario.create({
+        data: {
+          empresaId: null,
+          email: `superadmin-sin-roles-${suffix}@example.com`,
+          nombre: "Superadmin sin roles",
+          esSuperadmin: true,
+        },
+      }),
+    );
+
+    expect(superadmin.roles).toEqual([]);
+  });
+
+  it("rechaza un elemento nulo en roles (usuarios_roles_sin_nulos)", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan nulos ${suffix}`, importeMensual: "10.00" },
+        });
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa nulos ${suffix}`,
+            nif: `N${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-nulos-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+        const usuario = await tx.usuario.create({
+          data: {
+            empresaId: empresa.id,
+            email: `nulos-${suffix}@example.com`,
+            nombre: "Roles con nulo",
+          },
+        });
+
+        return tx.$executeRaw`
+          UPDATE usuarios
+          SET roles = ARRAY['OFICINA', NULL]::rol_usuario[]
+          WHERE id = ${usuario.id}::uuid
+        `;
+      }),
+    ).rejects.toThrow();
   });
 });

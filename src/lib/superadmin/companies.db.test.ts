@@ -93,6 +93,7 @@ describe("alta de empresa con plan e invitación", () => {
     expect(result.usuario?.estado).toBe("INACTIVO");
     expect(result.usuario?.passwordHash).toBeNull();
     expect(result.usuario?.esSuperadmin).toBe(false);
+    expect(result.usuario?.roles).toEqual(["ADMINISTRADOR"]);
     expect(result.usuario?.empresaId).toBe(result.created.empresaId);
     expect(result.invitacion?.tipo).toBe("ADMINISTRADOR_EMPRESA");
     expect(result.invitacion?.empresaId).toBe(result.created.empresaId);

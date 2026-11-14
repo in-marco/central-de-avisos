@@ -103,6 +103,7 @@ export async function createCompanyWithInvitationInTransaction(
       passwordHash: null,
       estado: "INACTIVO",
       esSuperadmin: false,
+      roles: ["ADMINISTRADOR"],
     },
   });
 

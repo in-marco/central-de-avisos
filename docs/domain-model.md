@@ -14,6 +14,12 @@
 - Email único global, contraseña, estado.
 - Pertenece a una única empresa, salvo el superadmin del proveedor.
 - Puede tener varios roles combinables: administrador, oficina, técnico, cliente.
+- Implementado: `roles` es un atributo del usuario (lista del enum
+  `rol_usuario`: `ADMINISTRADOR`, `OFICINA`, `TECNICO`). Los permisos se
+  derivan en código y se suman. El superadmin no tiene roles. El rol `CLIENTE`
+  se añadirá con el portal (`client-portal-invitation`), cuando exista
+  `cliente_id`.
+- La empresa conserva siempre al menos un administrador `ACTIVO`.
 
 ### Invitación
 - Pertenece a una empresa y a un usuario invitado.

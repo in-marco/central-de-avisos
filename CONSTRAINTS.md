@@ -21,9 +21,10 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   `src/lib/superadmin/*` y siempre detrás de `requireSuperadmin`. Esa excepción
   no se replica en otros módulos. Motivo: una consulta sin filtro filtra datos
   de otra empresa.
-- **MUST** la autorización de proveedor usa solo `es_superadmin = true` y
-  `empresa_id` nulo; no se sustituye por roles en este slice. Motivo: los roles
-  combinables pertenecen a `role-based-permissions`.
+- **MUST** la autorización de proveedor (`/superadmin`, `/api/superadmin/*`)
+  usa solo `es_superadmin = true` y `empresa_id` nulo (`requireSuperadmin`);
+  los roles de empresa nunca dan acceso a esa superficie. Motivo: el proveedor
+  y las empresas son ámbitos de autorización distintos.
 - **MUST** el alta de empresa, el usuario administrador invitado y la invitación
   se crean en una sola transacción. Motivo: un fallo no debe dejar empresa sin
   administrador ni usuario huérfano.
@@ -70,6 +71,38 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   registro de auditoría. Motivo: riesgo aceptado y documentado en
   `docs/risks-and-open-questions.md`.
 
+## Roles y permisos de empresa
+
+- **MUST** toda página de empresa usa `requirePermission` y todo route handler
+  de empresa usa `authorizeCompanyRequest`, ambos con un `Permiso` de
+  `src/lib/authz/permissions.ts`; ocultar una entrada de la navegación nunca
+  basta. Única excepción: la portada `/panel`, que comparten el superadmin y
+  los usuarios sin roles, usa `requireSession` y no muestra datos de empresa
+  protegidos por permiso. Motivo: la interfaz no es la frontera de seguridad y
+  las URLs se pueden escribir a mano.
+- **MUST** la matriz de `permissions.ts` coincide con
+  `docs/user-and-access-model.md`; si discrepan, manda el documento y se
+  corrigen código y test. Motivo: una sola fuente de verdad de permisos.
+- **MUST** los roles se leen de la base de datos en cada petición (vía
+  `getCurrentSession`); no se cachean en la cookie ni entre peticiones.
+  Motivo: retirar un rol debe cortar el acceso de inmediato.
+- **MUST** una empresa conserva al menos un administrador `ACTIVO` y nadie se
+  quita su propio `ADMINISTRADOR`; los cambios de roles bloquean la fila de la
+  empresa (`FOR UPDATE`) y revierten si el recuento queda a cero. Motivo:
+  evitar empresas sin nadie que gestione usuarios, también en concurrencia.
+- **MUST** el superadmin no tiene roles (CHECK `usuarios_superadmin_sin_roles`)
+  ni permisos de empresa (`can()` devuelve `false`). Motivo: separar proveedor
+  y tenant.
+- **MUST** `forbidden()` solo se lanza por debajo de un boundary
+  `forbidden.tsx` propio (en `/panel`, desde la página, nunca desde
+  `src/app/panel/layout.tsx`). Motivo: lanzado en el layout del mismo segmento,
+  Next muestra su 403 por defecto en inglés.
+- **MUST** cada `page.tsx` de `/panel` llama a `requireSession` o
+  `requirePermission`; el layout de `/panel` no redirige ni deniega
+  (`panel-guards.test.ts` lo comprueba). Motivo: Next renderiza la página aunque
+  el layout no lo haga, y si el layout redirigiera, el login perdería la ruta
+  pedida en `next`.
+
 ## RLS diferida
 
 - **MUST NOT** asumir que PostgreSQL bloquea lecturas cruzadas: RLS no está
@@ -87,8 +120,8 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST NOT** usar `prisma db push` para cambios compartidos. Motivo: no deja
   historial de migración.
 - **MUST** los CHECK que Prisma no modela (importe no negativo, email
-  normalizado, coherencia superadmin/empresa, NIF normalizado y fechas de
-  invitación) se mantienen en SQL y se cubren con `npm run test:db` al cambiar
+  normalizado, coherencia superadmin/empresa, NIF normalizado, fechas de
+  invitación, superadmin sin roles y roles sin nulos) se mantienen en SQL y se cubren con `npm run test:db` al cambiar
   el esquema. Motivo: Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
@@ -97,8 +130,10 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 
 ## Autenticación y sesiones
 
-- **MUST** toda ruta o layout privado ejecuta `requireSession` en servidor.
-  Motivo: no hay middleware/proxy que pueda validar la sesión de base de datos.
+- **MUST** toda página privada (o el layout de su route group, como en
+  `/superadmin`) ejecuta `requireSession`, `requirePermission` o
+  `requireSuperadmin` en servidor. Motivo: no hay middleware/proxy que pueda
+  validar la sesión de base de datos.
 - **MUST NOT** usar `middleware.ts`/`proxy.ts` como frontera de autorización.
   Motivo: es fácil de eludir y no consulta la sesión real.
 - **MUST** la cookie `central_sesion` es `HttpOnly`, `SameSite=Lax`, `Path=/`,

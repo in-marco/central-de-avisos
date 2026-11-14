@@ -84,6 +84,18 @@
   datos de todas las empresas. Mitigación: guard en layout/páginas/route
   handlers, `forbidden()` verificado con 403, same-origin y tests de
   autorización.
+- **Cambios de rol sin auditoría:** dar o quitar roles en `/panel/usuarios` no
+  deja un registro append-only; solo cambia `usuarios.roles`. Mitigación:
+  queda en `audit-trail-view`; mientras tanto solo el administrador puede
+  cambiar roles y nadie puede quitarse su propio rol de administrador.
+- **Sin alta de oficina ni técnicos:** ninguna feature del backlog invita o
+  crea usuarios de oficina o técnicos desde la interfaz; hoy solo los crea el
+  seed demo. Decidir antes de `office-aviso-creation`/`technician-inbox` si se
+  añade una feature de invitación de equipo o se amplía `user-deactivation`.
+- **Petición en vuelo tras perder un rol:** el permiso se comprueba al inicio
+  de cada petición; una petición que empezó justo antes de retirar un rol
+  puede completarse. El recuento de administradores activos dentro de la
+  transacción impide, aun así, dejar a la empresa sin administrador.
 - **Normalización de NIF en la migración:** si una base existente tuviera dos
   NIF que solo difieren en mayúsculas o espacios, la normalización chocaría con
   el índice único. Mitigación: revisar duplicados antes de desplegar; en local
