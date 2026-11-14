@@ -1,15 +1,33 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { requireSession } from "@/lib/auth/current-session";
+import { getCurrentSession } from "@/lib/auth/current-session";
+import { visibleNavItems } from "@/lib/authz/navigation";
+import { PanelNav } from "./_components/panel-nav";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Cabecera y navegación del panel. El layout NO es la frontera de seguridad:
+ * Next renderiza la página aunque el layout no lo haga, así que cada página de
+ * `/panel` llama a `requireSession` o `requirePermission` (lo comprueba
+ * `src/lib/authz/panel-guards.test.ts`).
+ *
+ * Sin sesión, el layout no muestra nada propio y deja que la página redirija
+ * al login con su propio `next` (p. ej. `/login?next=%2Fpanel%2Fusuarios`).
+ * Tampoco lanza `forbidden()`: no lo capturaría `src/app/panel/forbidden.tsx`,
+ * que queda por debajo de este layout.
+ */
 export default async function PanelLayout({
   children,
 }: Readonly<{
   children: ReactNode;
 }>) {
-  const session = await requireSession("/panel");
+  const session = await getCurrentSession();
+
+  if (!session) {
+    return <>{children}</>;
+  }
+
   const ambito = session.empresa?.nombre ?? "Proveedor SaaS";
 
   return (
@@ -41,6 +59,8 @@ export default async function PanelLayout({
           </div>
         </div>
       </header>
+
+      <PanelNav items={visibleNavItems(session)} />
 
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-8 sm:py-12">
         {children}

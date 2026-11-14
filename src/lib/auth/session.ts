@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
+import { normalizeRoles, type Rol } from "@/lib/authz/permissions";
 import {
   DUMMY_PASSWORD_HASH,
   isEmailLengthValid,
@@ -24,6 +25,11 @@ export type AuthenticatedUser = {
   email: string;
   esSuperadmin: boolean;
   empresa: { id: string; nombre: string } | null;
+  /**
+   * Roles de empresa leídos de la base de datos en cada petición. El
+   * superadmin siempre tiene `[]`.
+   */
+  roles: Rol[];
 };
 
 export type CurrentSession = AuthenticatedUser & {
@@ -76,8 +82,13 @@ function toAuthenticatedUser(usuario: {
   nombre: string;
   email: string;
   esSuperadmin: boolean;
+  roles: readonly string[];
   empresa: { id: string; nombre: string } | null;
 }): AuthenticatedUser {
+  // Se revalida contra el enum de la aplicación y se fuerza `[]` al
+  // superadmin: nunca se conceden permisos de empresa por un valor inesperado.
+  const normalized = normalizeRoles(usuario.roles);
+
   return {
     id: usuario.id,
     nombre: usuario.nombre,
@@ -86,6 +97,7 @@ function toAuthenticatedUser(usuario: {
     empresa: usuario.empresa
       ? { id: usuario.empresa.id, nombre: usuario.empresa.nombre }
       : null,
+    roles: usuario.esSuperadmin || !normalized.ok ? [] : normalized.roles,
   };
 }
 

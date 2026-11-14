@@ -70,6 +70,7 @@ async function createFixture(
       nombre: "Usuario Auth",
       passwordHash,
       estado: options.estado ?? "ACTIVO",
+      roles: ["TECNICO", "ADMINISTRADOR"],
     },
   });
 
@@ -118,6 +119,9 @@ describe("autenticación con credenciales", () => {
       result.auth.expiraEn.getTime() - Date.now(),
     ).toBeGreaterThan(SESSION_DURATION_MS - 10_000);
     expect(result.current?.id).toBe(result.fixture.usuario.id);
+    // Roles normalizados al orden canónico, tanto en login como en sesión.
+    expect(result.auth.user.roles).toEqual(["ADMINISTRADOR", "TECNICO"]);
+    expect(result.current?.roles).toEqual(["ADMINISTRADOR", "TECNICO"]);
   });
 
   it("rechaza una contraseña incorrecta sin crear sesión", async () => {
@@ -226,6 +230,7 @@ describe("autenticación con credenciales", () => {
     }
     expect(result.current?.esSuperadmin).toBe(true);
     expect(result.current?.empresa).toBeNull();
+    expect(result.current?.roles).toEqual([]);
   });
 });
 

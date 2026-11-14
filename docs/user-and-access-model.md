@@ -85,8 +85,31 @@ Notas:
   activa la cuenta. La de una empresa suspendida sigue pendiente hasta que
   caduque.
 - Si el navegador tenía otra sesión abierta, se revoca al activar la cuenta.
-- Los roles combinables, permisos por rol, reenvío de invitaciones,
-  recuperación de contraseña y revocación masiva siguen fuera de este slice.
+- Los usuarios de empresa tienen roles combinables persistidos
+  (`ADMINISTRADOR`, `OFICINA`, `TECNICO`). La matriz de permisos de este
+  documento (columnas Administrador, Oficina y Técnico) está en
+  `src/lib/authz/permissions.ts`; los permisos de varios roles se suman y, por
+  defecto, se deniega. Un usuario de empresa sin roles solo ve `/panel` con el
+  aviso «Sin roles asignados».
+- Los roles se leen de la base de datos en cada petición: dar o quitar un rol
+  surte efecto en la siguiente petición del usuario, sin cerrar su sesión.
+- El administrador gestiona los roles de su empresa en `/panel/usuarios`. No
+  puede dejar a un usuario sin roles ni quitarse su propio rol de
+  administrador, y la empresa conserva siempre al menos un administrador
+  `ACTIVO`, también ante cambios simultáneos.
+- Oficina, técnico, usuario sin roles y superadmin reciben 403 en
+  `/panel/usuarios` y en su API; la navegación solo muestra «Usuarios» a quien
+  tiene el permiso.
+- El superadmin no tiene roles de empresa (CHECK en base de datos) ni gestiona
+  roles desde `/panel`; su acceso sigue siendo `es_superadmin` con
+  `empresa_id` nulo. La fila «Gestionar usuarios de empresa: Superadmin Sí»
+  queda pendiente de una superficie de proveedor específica.
+- El alta de empresa crea al administrador invitado con el rol
+  `ADMINISTRADOR`.
+- Siguen fuera de este slice: rol Cliente y portal (`client-portal-invitation`),
+  invitar usuarios de oficina o técnicos, desactivar usuarios
+  (`user-deactivation`), auditoría de cambios de rol, reenvío de invitaciones,
+  recuperación de contraseña y revocación masiva.
 
 ## Revocation / Expiry
 

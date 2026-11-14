@@ -9,6 +9,7 @@ BASE_URL="http://127.0.0.1:${PORT}"
 LOG_FILE="${TMPDIR:-/tmp}/central-de-avisos-smoke.log"
 COOKIE_JAR="${TMPDIR:-/tmp}/central-de-avisos-smoke.cookies"
 NORMAL_COOKIE_JAR="${TMPDIR:-/tmp}/central-de-avisos-smoke-normal.cookies"
+ROLE_COOKIE_JAR="${TMPDIR:-/tmp}/central-de-avisos-smoke-role.cookies"
 SERVER_PID=""
 KEEP_LOG=0
 
@@ -58,7 +59,7 @@ cleanup() {
     kill_tree "$SERVER_PID"
     kill_port_fallback "$PORT"
   fi
-  rm -f "$COOKIE_JAR" "$NORMAL_COOKIE_JAR"
+  rm -f "$COOKIE_JAR" "$NORMAL_COOKIE_JAR" "$ROLE_COOKIE_JAR"
   if [[ "$KEEP_LOG" -eq 0 ]]; then
     rm -f "$LOG_FILE"
   fi
@@ -144,6 +145,11 @@ referrer_policy="$(curl -s -D - -o /dev/null --max-time 10 "${BASE_URL}/invitaci
 [[ "$referrer_policy" == "same-origin" ]] || fail "Referrer-Policy de /invitacion: esperado same-origin, recibido ${referrer_policy:-ninguna}"
 echo "OK   Referrer-Policy de /invitacion -> same-origin"
 expect_status POST /api/invitaciones/aceptar 403 -H "Origin: http://evil.example"
+# Permisos por rol: sin sesión, página y API de usuarios. No crea datos.
+expect_status GET /panel/usuarios 307
+expect_status GET /api/panel/usuarios/roles 405
+expect_status POST /api/panel/usuarios/roles 403 -H "Origin: http://evil.example"
+expect_status POST /api/panel/usuarios/roles 307 -H "Origin: ${BASE_URL}"
 
 if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   [[ -n "${SMOKE_EMAIL:-}" && -n "${SMOKE_PASSWORD:-}" ]] \
@@ -162,6 +168,9 @@ if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   expect_status GET /superadmin 200 -b "$COOKIE_JAR"
   expect_status GET /superadmin/empresas 200 -b "$COOKIE_JAR"
   expect_status GET /api/superadmin/empresas 405 -b "$COOKIE_JAR"
+  # El superadmin no tiene permisos de empresa.
+  expect_status GET /panel/usuarios 403 -b "$COOKIE_JAR"
+  expect_status POST /api/panel/usuarios/roles 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status POST /api/auth/logout 303 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status GET /panel 307
 fi
@@ -182,8 +191,44 @@ if [[ -n "${SMOKE_NORMAL_EMAIL:-}" || -n "${SMOKE_NORMAL_PASSWORD:-}" ]]; then
   expect_status GET /panel 200 -b "$NORMAL_COOKIE_JAR"
   expect_status GET /superadmin/empresas 403 -b "$NORMAL_COOKIE_JAR"
   expect_status POST /api/superadmin/empresas 403 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  # SMOKE_NORMAL_* debe ser un administrador de empresa.
+  expect_status GET /panel/usuarios 200 -b "$NORMAL_COOKIE_JAR"
   # Revoca la sesión para no dejar sesiones activas de verificación.
   expect_status POST /api/auth/logout 303 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+fi
+
+# Roles sin permiso de gestión de usuarios (oficina y técnico). Opcionales.
+check_role_without_user_management() {
+  local label="$1"
+  local email="$2"
+  local password="$3"
+
+  echo "Probando login de ${label}..."
+  rm -f "$ROLE_COOKIE_JAR"
+  code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+    -c "$ROLE_COOKIE_JAR" \
+    -H "Origin: ${BASE_URL}" \
+    --data-urlencode "email=${email}" \
+    --data-urlencode "password=${password}" \
+    "${BASE_URL}/api/auth/login")"
+  [[ "$code" == "303" ]] || fail "Login ${label}: esperado 303, recibido $code"
+
+  expect_status GET /panel 200 -b "$ROLE_COOKIE_JAR"
+  expect_status GET /panel/usuarios 403 -b "$ROLE_COOKIE_JAR"
+  expect_status POST /api/panel/usuarios/roles 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status POST /api/auth/logout 303 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+}
+
+if [[ -n "${SMOKE_OFICINA_EMAIL:-}" || -n "${SMOKE_OFICINA_PASSWORD:-}" ]]; then
+  [[ -n "${SMOKE_OFICINA_EMAIL:-}" && -n "${SMOKE_OFICINA_PASSWORD:-}" ]] \
+    || fail "Define SMOKE_OFICINA_EMAIL y SMOKE_OFICINA_PASSWORD juntos"
+  check_role_without_user_management "oficina" "$SMOKE_OFICINA_EMAIL" "$SMOKE_OFICINA_PASSWORD"
+fi
+
+if [[ -n "${SMOKE_TECNICO_EMAIL:-}" || -n "${SMOKE_TECNICO_PASSWORD:-}" ]]; then
+  [[ -n "${SMOKE_TECNICO_EMAIL:-}" && -n "${SMOKE_TECNICO_PASSWORD:-}" ]] \
+    || fail "Define SMOKE_TECNICO_EMAIL y SMOKE_TECNICO_PASSWORD juntos"
+  check_role_without_user_management "técnico" "$SMOKE_TECNICO_EMAIL" "$SMOKE_TECNICO_PASSWORD"
 fi
 
 echo "Smoke HTTP completado correctamente."

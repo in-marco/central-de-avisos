@@ -7,8 +7,9 @@ import {
 import type { CurrentSession } from "@/lib/auth/session";
 
 /**
- * Única regla de autorización de proveedor en este slice: superadmin con
- * `empresa_id` nulo. No hay tabla de roles ni permisos combinables.
+ * Única regla de autorización de proveedor: superadmin con `empresa_id` nulo.
+ * Es independiente de los roles de empresa (`src/lib/authz/`): el superadmin
+ * no tiene roles y los roles de empresa nunca dan acceso a `/superadmin`.
  */
 export function isSuperadmin(
   session: Pick<CurrentSession, "esSuperadmin" | "empresa"> | null,

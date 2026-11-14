@@ -7,6 +7,10 @@ import {
 } from "./tenant";
 import { disconnectDb } from "./client";
 import { inRollback, uniqueSuffix } from "./db-test-utils";
+import {
+  listCompanyUsers,
+  updateUserRolesInTransaction,
+} from "@/lib/empresa/usuarios";
 
 afterAll(async () => {
   await disconnectDb();
@@ -125,6 +129,67 @@ describe("aislamiento multiempresa", () => {
     expect(() => assertTenantAccess(usuarioB.empresaId, empresaA.id)).toThrow(
       TenantAccessError,
     );
+  });
+
+  it("un administrador de A no lista ni edita usuarios de B", async () => {
+    const suffix = uniqueSuffix();
+
+    const result = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan roles aislamiento ${suffix}`, importeMensual: "10.00" },
+      });
+      const empresaA = await tx.empresa.create({
+        data: {
+          nombre: `Empresa roles A ${suffix}`,
+          nif: `RA${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-ra-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+      const empresaB = await tx.empresa.create({
+        data: {
+          nombre: `Empresa roles B ${suffix}`,
+          nif: `RB${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-rb-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+      const adminA = await tx.usuario.create({
+        data: {
+          empresaId: empresaA.id,
+          email: `admin-ra-${suffix}@example.com`,
+          nombre: "Admin A",
+          roles: ["ADMINISTRADOR"],
+        },
+      });
+      const tecnicoB = await tx.usuario.create({
+        data: {
+          empresaId: empresaB.id,
+          email: `tecnico-rb-${suffix}@example.com`,
+          nombre: "Técnico B",
+          roles: ["TECNICO"],
+        },
+      });
+
+      const listadoA = await listCompanyUsers(tx, empresaA.id);
+      const update = await updateUserRolesInTransaction(tx, {
+        empresaId: empresaA.id,
+        actorId: adminA.id,
+        usuarioId: tecnicoB.id,
+        roles: ["ADMINISTRADOR"],
+      });
+      const tecnicoBDespues = await tx.usuario.findUniqueOrThrow({
+        where: { id: tecnicoB.id },
+      });
+
+      return { adminA, tecnicoB, listadoA, update, tecnicoBDespues };
+    });
+
+    expect(result.listadoA.map((usuario) => usuario.id)).toEqual([
+      result.adminA.id,
+    ]);
+    expect(result.update).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.tecnicoBDespues.roles).toEqual(["TECNICO"]);
   });
 
   it("requireEmpresaId impide consultar sin contexto de empresa", () => {

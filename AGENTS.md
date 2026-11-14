@@ -74,8 +74,12 @@ npm run db:status      # comprueba el historial
 npm run db:seed        # datos demo locales (idempotente, nunca en producción)
 ```
 
-`db:seed` usa `tsx` y variables `SEED_ADMIN_*`/`SEED_SUPERADMIN_*`; no forma
-parte de `init.sh` ni del gate.
+`db:seed` usa `tsx` y variables `SEED_ADMIN_*`/`SEED_SUPERADMIN_*`, además de
+`SEED_EQUIPO_PASSWORD` (y `SEED_OFICINA_EMAIL`, `SEED_TECNICO_EMAIL`,
+`SEED_ENCARGADO_EMAIL` opcionales) para el equipo demo de Empresa Demo:
+`oficina@demo.local` (OFICINA), `tecnico@demo.local` (TECNICO) y
+`encargado@demo.local` (ADMINISTRADOR+TECNICO). Cada ejecución restaura los
+roles demo. No forma parte de `init.sh` ni del gate.
 
 Instalación y gate estándar (no necesita base de datos):
 
@@ -106,6 +110,8 @@ npm run dev
 - Home: `http://localhost:3000/`
 - Login: `http://localhost:3000/login`
 - Panel privado: `http://localhost:3000/panel` (requiere sesión)
+- Usuarios y roles: `http://localhost:3000/panel/usuarios` (solo permiso
+  `usuarios.gestionar`, es decir, rol `ADMINISTRADOR`; el resto recibe 403)
 - Panel de proveedor: `http://localhost:3000/superadmin` (solo
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
@@ -126,6 +132,11 @@ y no se envía por email ni se puede recuperar. El invitado lo abre en
 `/invitacion/<token>`, define una contraseña de 12 a 128 caracteres y entra en
 `/panel` con sesión de su empresa; la aceptación es atómica y de un solo uso
 (`POST /api/invitaciones/aceptar`). No hay reenvío de invitaciones.
+Los usuarios de empresa tienen roles combinables (`ADMINISTRADOR`, `OFICINA`,
+`TECNICO`) leídos de la base de datos en cada petición; la matriz de permisos
+vive en `src/lib/authz/permissions.ts` y los guards son `requirePermission`
+(páginas) y `authorizeCompanyRequest` (route handlers). El administrador cambia
+roles en `/panel/usuarios` (`POST /api/panel/usuarios/roles`).
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.
@@ -140,8 +151,10 @@ No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
 - Usar `curl --max-time 10` en todas las comprobaciones HTTP.
 - Preferir `bash scripts/validate-smoke.sh` en Git Bash: arranca el servidor,
   comprueba rutas públicas y privadas, y limpia procesos y cookies. Admite
-  `SMOKE_EMAIL`/`SMOKE_PASSWORD` y `SMOKE_NORMAL_EMAIL`/`SMOKE_NORMAL_PASSWORD`
-  para las comprobaciones autenticadas.
+  `SMOKE_PORT`, `SMOKE_EMAIL`/`SMOKE_PASSWORD` (superadmin),
+  `SMOKE_NORMAL_EMAIL`/`SMOKE_NORMAL_PASSWORD` (administrador de empresa) y,
+  opcionales, `SMOKE_OFICINA_EMAIL`/`SMOKE_OFICINA_PASSWORD` y
+  `SMOKE_TECNICO_EMAIL`/`SMOKE_TECNICO_PASSWORD` para la matriz por rol.
 - Al terminar, matar el árbol de procesos y verificar que el puerto queda libre.
 - No dejar cookies, logs, perfiles de navegador ni bases de verificación. Las
   pruebas de integración usan una base separada que se elimina al terminar;

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireSession } from "@/lib/auth/current-session";
+import { formatRoles } from "@/lib/authz/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +51,33 @@ export default async function PanelPage() {
             </dt>
             <dd className="mt-1 text-base text-text">{ambito}</dd>
           </div>
+          {session.esSuperadmin ? null : (
+            <div>
+              <dt className="font-medium text-muted">Roles</dt>
+              <dd className="mt-1 text-base text-text">
+                {session.roles.length > 0
+                  ? formatRoles(session.roles)
+                  : "Sin roles asignados"}
+              </dd>
+            </div>
+          )}
           <div>
             <dt className="font-medium text-muted">Sesión válida hasta</dt>
             <dd className="mt-1 text-base text-text">{caducidad}</dd>
           </div>
         </dl>
       </section>
+
+      {!session.esSuperadmin && session.roles.length === 0 ? (
+        <div
+          className="rounded-md border border-warning/40 bg-warning/5 px-4 py-3 text-sm leading-6 text-text"
+          role="status"
+        >
+          <strong className="font-semibold">Sin roles asignados.</strong> Tu
+          cuenta todavía no tiene acceso a ninguna sección. Pide a un
+          administrador de tu empresa que te asigne un rol.
+        </div>
+      ) : null}
 
       {session.esSuperadmin ? (
         <section className="rounded-lg border border-border bg-surface p-6 sm:p-8">

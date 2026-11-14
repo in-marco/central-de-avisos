@@ -6,8 +6,9 @@ partes y facturación en modo NO-VERIFACTU firmado (MVP).
 Estado actual: fundamento técnico con autenticación propia y panel de
 proveedor. La app Next.js arranca, PostgreSQL está conectado mediante Prisma y
 existen login con email y contraseña, sesiones revocables, un panel privado
-mínimo y una superficie de superadmin para planes, alta de empresas e
-invitación de administradores. Todavía no hay roles ni dominio operativo.
+con navegación por permisos, roles de empresa combinables gestionados por el
+administrador y una superficie de superadmin para planes, alta de empresas e
+invitación de administradores. Todavía no hay dominio operativo.
 
 ## Requisitos
 
@@ -86,13 +87,24 @@ Tras aplicar las migraciones, crea los datos demo:
 npm run db:seed
 ```
 
-El seed usa `tsx`, es idempotente y lee `SEED_ADMIN_*` y
-`SEED_SUPERADMIN_*` de `.env`. Rechaza ejecutarse con `NODE_ENV=production`.
-Las contraseñas de ejemplo de `.env.example` son solo para desarrollo local:
-cámbialas en tu `.env` y no las reutilices fuera de local.
+El seed usa `tsx`, es idempotente y lee `SEED_ADMIN_*`, `SEED_SUPERADMIN_*` y
+`SEED_EQUIPO_PASSWORD` (más `SEED_OFICINA_EMAIL`, `SEED_TECNICO_EMAIL` y
+`SEED_ENCARGADO_EMAIL`, opcionales) de `.env`. Rechaza ejecutarse con
+`NODE_ENV=production`. Las contraseñas de ejemplo de `.env.example` son solo
+para desarrollo local: cámbialas en tu `.env` y no las reutilices fuera de
+local.
 
-Con el seed aplicado, los usuarios demo son `admin@demo.local` (empresa) y
-`superadmin@demo.local` (proveedor SaaS). Inicia sesión en
+Con el seed aplicado, los usuarios demo son:
+
+| Email | Roles | Contraseña |
+| --- | --- | --- |
+| `admin@demo.local` | Administrador | `SEED_ADMIN_PASSWORD` |
+| `oficina@demo.local` | Oficina | `SEED_EQUIPO_PASSWORD` |
+| `tecnico@demo.local` | Técnico | `SEED_EQUIPO_PASSWORD` |
+| `encargado@demo.local` | Administrador + Técnico | `SEED_EQUIPO_PASSWORD` |
+| `superadmin@demo.local` | Proveedor SaaS (sin roles de empresa) | `SEED_SUPERADMIN_PASSWORD` |
+
+Cada ejecución del seed restaura esos roles. Inicia sesión en
 <http://localhost:3000/login> y abre <http://localhost:3000/panel>.
 
 - La cookie `central_sesion` es `HttpOnly`, `SameSite=Lax`, dura 12 h y solo se
@@ -123,7 +135,28 @@ anónimo va al login.
 - Tras el alta, el detalle muestra una sola vez el enlace
   `/invitacion/<token>` desde una cookie flash de 60 s. No se envía email real,
   no se guarda el token crudo y el enlace no se puede recuperar.
-- Roles y facturación mensual quedan fuera de este slice.
+- La facturación mensual queda fuera de este slice.
+
+## Roles y permisos
+
+Los usuarios de empresa tienen roles combinables (`Administrador`, `Oficina`,
+`Técnico`) y sus permisos se suman según la matriz de
+`docs/user-and-access-model.md`, implementada en
+`src/lib/authz/permissions.ts`. Los roles se leen de la base de datos en cada
+petición: un cambio surte efecto sin volver a iniciar sesión.
+
+- La navegación del panel muestra «Inicio» a todos, «Usuarios» solo a quien
+  puede gestionar usuarios y «Panel de proveedor» solo al superadmin. Ocultar
+  no es la defensa: cada página y acción se autoriza en servidor.
+- `/panel/usuarios` (rol Administrador) lista los usuarios de la empresa y
+  permite cambiar sus roles. No se puede dejar a un usuario sin roles, quitarse
+  el propio rol de administrador ni dejar a la empresa sin administradores
+  activos.
+- Oficina, técnico, un usuario sin roles y el superadmin reciben 403 en
+  `/panel/usuarios` y en `POST /api/panel/usuarios/roles`; un anónimo va al
+  login.
+- Fuera de este slice: rol Cliente y portal, invitar o desactivar usuarios de
+  empresa y auditoría de los cambios de rol.
 
 ## Activación del administrador invitado
 
@@ -147,6 +180,7 @@ npm run dev
 - Home: <http://localhost:3000/>
 - Login: <http://localhost:3000/login>
 - Panel privado: <http://localhost:3000/panel> (requiere sesión)
+- Usuarios y roles: <http://localhost:3000/panel/usuarios> (solo administrador)
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
@@ -209,15 +243,33 @@ npm run test:db
 
 Se ejecutan en serie dentro de transacciones con rollback y cubren constraints,
 FKs, aislamiento entre dos empresas, autenticación (credenciales, estados,
-caducidad, revocación y token hasheado) y superadmin (planes, altas,
-duplicados, plan inactivo, invitación hasheada, estados y rollback).
+caducidad, revocación y token hasheado), superadmin (planes, altas,
+duplicados, plan inactivo, invitación hasheada, estados y rollback) y roles
+(CHECK, validaciones, aislamiento y último administrador en concurrencia).
+
+Smoke HTTP con `next start` (Git Bash; `SMOKE_*` opcionales para las
+comprobaciones autenticadas por rol):
+
+```bash
+SMOKE_PORT=3100 \
+SMOKE_EMAIL=superadmin@demo.local SMOKE_PASSWORD=... \
+SMOKE_NORMAL_EMAIL=admin@demo.local SMOKE_NORMAL_PASSWORD=... \
+SMOKE_OFICINA_EMAIL=oficina@demo.local SMOKE_OFICINA_PASSWORD=... \
+SMOKE_TECNICO_EMAIL=tecnico@demo.local SMOKE_TECNICO_PASSWORD=... \
+bash scripts/validate-smoke.sh
+```
 
 ## Estructura
 
 - `src/app/` — rutas de Next.js (App Router).
 - `src/app/health/route.ts` — endpoint `GET /health`.
 - `src/app/login/` — formulario de login server-rendered.
-- `src/app/panel/` — layout protegido y panel mínimo.
+- `src/app/panel/` — layout con navegación por permisos, panel, `usuarios/`
+  (roles) y `forbidden.tsx` (403 propio).
+- `src/app/api/panel/usuarios/roles/` — `POST` de cambio de roles.
+- `src/lib/authz/` — matriz de permisos, navegación y guards
+  (`requirePermission`, `authorizeCompanyRequest`).
+- `src/lib/empresa/` — usuarios de la empresa y cambio transaccional de roles.
 - `src/app/api/auth/` — route handlers de login y logout (`POST`).
 - `src/lib/auth/` — hash scrypt, tokens, sesiones, cookie, same-origin y
   validación de `next`.

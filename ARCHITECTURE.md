@@ -3,9 +3,10 @@
 Estado actual: fundamento técnico con autenticación propia y superficie de
 proveedor. La app es un monolito Next.js con App Router y una única superficie
 de datos PostgreSQL. Existe login con email y contraseña, sesiones opacas
-revocables, un panel privado mínimo y un panel de superadmin para planes, alta
-de empresas e invitación de su administrador; todavía no hay roles ni dominio
-operativo.
+revocables, un panel privado con navegación por permisos, roles de empresa
+combinables con gestión en `/panel/usuarios` y un panel de superadmin para
+planes, alta de empresas e invitación de su administrador; todavía no hay
+dominio operativo.
 
 ## Capas y dirección de dependencias
 
@@ -13,6 +14,8 @@ operativo.
 src/app/          rutas HTTP y páginas (borde de entrada)
   ├─ src/lib/     lógica de aplicación testeable sin servidor
   │    ├─ src/lib/auth/       autenticación y sesiones (server-only en current-session)
+  │    ├─ src/lib/authz/      matriz de permisos y navegación (puros) y guards de servidor
+  │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles), con tenantFilter
   │    └─ src/lib/superadmin/ autorización, planes, altas e invitaciones
   └─ src/db/      acceso a datos y contrato de tenant
        └─ src/generated/prisma/ cliente Prisma generado (no versionado)
@@ -56,9 +59,13 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   `ACTIVA`/`SUSPENDIDA` e índice por plan.
 - `usuarios`: email único global, `empresa_id` nullable con FK `Restrict`,
   `password_hash` nullable (invitados sin contraseña), estado
-  `ACTIVO`/`INACTIVO`, `es_superadmin` e índice por empresa. Los CHECK
-  garantizan email normalizado y que solo el superadmin tenga `empresa_id`
-  nulo.
+  `ACTIVO`/`INACTIVO`, `es_superadmin`, `roles rol_usuario[] NOT NULL DEFAULT
+  '{}'` (enum `ADMINISTRADOR`/`OFICINA`/`TECNICO`) e índice por empresa. Los
+  CHECK garantizan email normalizado, que solo el superadmin tenga
+  `empresa_id` nulo, que el superadmin no tenga roles
+  (`usuarios_superadmin_sin_roles`) y que la lista no tenga nulos
+  (`usuarios_roles_sin_nulos`). La base de datos no exige un mínimo de un rol:
+  un usuario de empresa sin roles no tiene permisos.
 - `sesiones`: sesión opaca con FK `CASCADE` a `usuarios`, `token_hash` único,
   `creado_en`, `expira_en` y `revocada_en` nullable; índices por usuario y
   expiración y CHECK `expira_en > creado_en`. El token crudo nunca se guarda.
@@ -93,7 +100,8 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
 
 - `/superadmin` es privada y se protege en el layout y en cada página con
   `requireSuperadmin`. La regla es solo `es_superadmin = true` y
-  `empresa_id` nulo; no hay tabla de roles.
+  `empresa_id` nulo; los roles de empresa no intervienen y el superadmin no
+  tiene ninguno.
 - Un usuario autenticado sin `es_superadmin` recibe `403` mediante
   `forbidden()` (experimental `authInterrupts`) y `superadmin/forbidden.tsx`.
   El layout que ejecuta el guard vive en
@@ -119,7 +127,46 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   `SameSite=Strict`, `Path=/superadmin/empresas`, `Max-Age=60`) y el detalle lo
   muestra una sola vez como `/invitacion/<token>`. No se envía email real, no
   se guarda en URL ni logs y no hay reenvío ni recuperación.
-- Roles, auditoría y facturación mensual siguen fuera de este slice.
+- Auditoría y facturación mensual siguen fuera de este slice.
+
+## Roles y permisos de empresa
+
+- **Matriz en código:** `src/lib/authz/permissions.ts` (puro) define `ROLES`,
+  la unión `Permiso` y `ROLE_PERMISSIONS`, copia de las columnas Administrador,
+  Oficina y Técnico de `docs/user-and-access-model.md`. `can(session,
+  permiso)` suma los permisos de todos los roles y deniega por defecto: sin
+  sesión, superadmin o sin empresa → `false`. `normalizeRoles` valida contra el
+  enum, deduplica y ordena.
+- **Sesión:** `AuthenticatedUser`/`CurrentSession` incluyen `roles`, leídos de
+  la base de datos en cada petición por `getSessionByToken` (revalidados con
+  `normalizeRoles`; el superadmin siempre `[]`). Un cambio de roles surte
+  efecto en la siguiente petición sin volver a iniciar sesión.
+- **Guards** (`src/lib/authz/guards.ts`): `requirePermission(permiso,
+  nextPath)` para páginas (307 a `/login?next=...` o `forbidden()`) y
+  `authorizeCompanyRequest(request, permiso, nextPath)` para route handlers
+  (307 o 403 en texto).
+- **Panel:** `src/app/panel/layout.tsx` lee la sesión con `getCurrentSession`
+  y pinta cabecera y `<nav aria-label="Secciones">` con `visibleNavItems`
+  (`src/lib/authz/navigation.ts`); no redirige ni deniega. Next renderiza la
+  página aunque el layout no lo haga, así que la frontera es cada página
+  (`requireSession` o `requirePermission`), y así el `next` del login conserva
+  la ruta pedida. `src/lib/authz/panel-guards.test.ts` falla si una página de
+  `/panel` no llama a un guard. `src/app/panel/forbidden.tsx` captura los
+  `forbidden()` de las páginas hijas y se pinta dentro del layout.
+- **Gestión de roles:** `/panel/usuarios` (permiso `usuarios.gestionar`) lista
+  los usuarios de la empresa con `tenantFilter` y sin superadmin, en tarjetas
+  con tres checkboxes por usuario. `POST /api/panel/usuarios/roles` comprueba
+  mismo origen, aplica `authorizeCompanyRequest` y llama a
+  `updateUserRoles` (`src/lib/empresa/usuarios.ts`), que en una transacción
+  bloquea la fila de la empresa (`SELECT ... FOR UPDATE`), carga el usuario por
+  `id + tenantFilter`, impide quitarse el propio `ADMINISTRADOR`, actualiza y
+  revierte si la empresa quedaría sin administradores `ACTIVO`. Responde 303
+  con `?ok=roles` o `?error=sin-roles|rol-invalido|propio-admin|no-encontrado|
+  ultimo-admin|servicio`; `GET` devuelve 405.
+- El alta de empresa crea al administrador invitado con
+  `roles = {ADMINISTRADOR}` en la misma transacción.
+- Fuera de este slice: rol `CLIENTE` y portal, invitar o desactivar usuarios
+  de empresa y auditoría de cambios de rol.
 
 ## Activación del administrador invitado
 
@@ -164,14 +211,15 @@ empresa y con las futuras invitaciones y roles.
   empresa. Una sesión caducada, revocada, con usuario `INACTIVO` o con empresa
   `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
 - **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth;
-  privadas `/panel` y `/superadmin`. `/panel` llama a `requireSession`;
+  privadas `/panel`, `/panel/usuarios` y `/superadmin`. Cada página de
+  `/panel` llama a `requireSession` o `requirePermission`;
   `/superadmin` añade `requireSuperadmin`, que redirige a
   `/login?next=...` si no hay sesión y usa `forbidden()` si el usuario no es
   superadmin. `getCurrentSession` usa `cookies()` (asíncrona) y `cache()` de
   React.
 - **Frontera de seguridad:** no hay middleware/proxy de autorización. Cada
-  layout o página privada debe ejecutar `requireSession` en servidor; el
-  middleware no puede validar de forma fiable una sesión de base de datos.
+  página privada (y el layout de `/superadmin`) ejecuta su guard en servidor;
+  el middleware no puede validar de forma fiable una sesión de base de datos.
 - **Login/logout:** `POST` con `application/x-www-form-urlencoded`, comprobación
   de mismo origen cuando llega `Origin`, 303 y `next` validado para evitar open
   redirects. Logout marca `revocada_en` y borra la cookie.
@@ -191,8 +239,10 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
 - `npm test`: unitarios, sin base de datos. Excluye `*.db.test.ts`.
 - `npm run test:db`: migra y ejecuta tests de integración reales en serie,
   dentro de transacciones con rollback. Cubre constraints, FKs, aislamiento
-  entre dos empresas, autenticación/sesiones y superadmin (planes, altas,
-  duplicados, plan inactivo, token hasheado, estados de invitación y rollback).
+  entre dos empresas, autenticación/sesiones, superadmin (planes, altas,
+  duplicados, plan inactivo, token hasheado, estados de invitación y rollback)
+  y roles (CHECK, validaciones, aislamiento y último administrador con dos
+  transacciones concurrentes reales).
 - `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
   Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
   `init.sh` ni del gate.
