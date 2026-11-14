@@ -28,6 +28,12 @@ enum EstadoUsuario {
   @@map("estado_usuario")
 }
 
+enum TipoInvitacion {
+  ADMINISTRADOR_EMPRESA
+
+  @@map("tipo_invitacion")
+}
+
 model Plan {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombre         String   @unique
@@ -45,14 +51,16 @@ model Empresa {
   id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombre           String
   nif              String        @unique
+  direccionFiscal  String?       @map("direccion_fiscal")
   emailFacturacion String        @map("email_facturacion")
   planId           String        @map("plan_id") @db.Uuid
   estado           EstadoEmpresa @default(ACTIVA)
   creadoEn         DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn    DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  plan     Plan      @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  usuarios Usuario[]
+  plan         Plan         @relation(fields: [planId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usuarios     Usuario[]
+  invitaciones Invitacion[]
 
   @@index([planId])
   @@map("empresas")
@@ -69,8 +77,9 @@ model Usuario {
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  empresa  Empresa? @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sesiones Sesion[]
+  empresa      Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sesiones     Sesion[]
+  invitaciones Invitacion[]
 
   @@index([empresaId])
   @@map("usuarios")
@@ -90,4 +99,25 @@ model Sesion {
   @@index([usuarioId])
   @@index([expiraEn])
   @@map("sesiones")
+}
+
+// Invitación para activar a un usuario. El token crudo nunca se guarda: solo
+// su SHA-256. La caducidad y el estado derivado se calculan en aplicación.
+model Invitacion {
+  id         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId  String         @map("empresa_id") @db.Uuid
+  usuarioId  String         @map("usuario_id") @db.Uuid
+  tipo       TipoInvitacion @default(ADMINISTRADOR_EMPRESA)
+  tokenHash  String         @unique @map("token_hash")
+  creadaEn   DateTime       @default(now()) @map("creado_en") @db.Timestamptz(3)
+  expiraEn   DateTime       @map("expira_en") @db.Timestamptz(3)
+  aceptadaEn DateTime?      @map("aceptada_en") @db.Timestamptz(3)
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@index([empresaId])
+  @@index([usuarioId])
+  @@index([expiraEn])
+  @@map("invitaciones")
 }

@@ -25,7 +25,7 @@ describe("aislamiento multiempresa", () => {
         const empresaA = await tx.empresa.create({
           data: {
             nombre: `Empresa A ${suffix}`,
-            nif: `A${suffix}`,
+            nif: `A${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-a-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -33,7 +33,7 @@ describe("aislamiento multiempresa", () => {
         const empresaB = await tx.empresa.create({
           data: {
             nombre: `Empresa B ${suffix}`,
-            nif: `B${suffix}`,
+            nif: `B${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-b-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -97,7 +97,7 @@ describe("aislamiento multiempresa", () => {
       const empresaA = await tx.empresa.create({
         data: {
           nombre: `Empresa acceso A ${suffix}`,
-          nif: `AA${suffix}`,
+          nif: `AA${suffix.toUpperCase()}`,
           emailFacturacion: `facturacion-aa-${suffix}@example.com`,
           planId: plan.id,
         },
@@ -105,7 +105,7 @@ describe("aislamiento multiempresa", () => {
       const empresaB = await tx.empresa.create({
         data: {
           nombre: `Empresa acceso B ${suffix}`,
-          nif: `BB${suffix}`,
+          nif: `BB${suffix.toUpperCase()}`,
           emailFacturacion: `facturacion-bb-${suffix}@example.com`,
           planId: plan.id,
         },

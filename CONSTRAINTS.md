@@ -17,9 +17,31 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** recordar que `tenantFilter` devuelve `{ empresaId }` (campo Prisma);
   la columna física es `empresa_id`. Motivo: el filtro debe encajar con el
   cliente tipado sin renombrar el campo en cada consulta.
-- **MUST NOT** consultar una tabla de tenant sin filtro salvo en código de
-  superadmin explícito y auditado. Motivo: una consulta sin filtro filtra datos
+- **MUST NOT** consultar una tabla de tenant sin filtro salvo en
+  `src/lib/superadmin/*` y siempre detrás de `requireSuperadmin`. Esa excepción
+  no se replica en otros módulos. Motivo: una consulta sin filtro filtra datos
   de otra empresa.
+- **MUST** la autorización de proveedor usa solo `es_superadmin = true` y
+  `empresa_id` nulo; no se sustituye por roles en este slice. Motivo: los roles
+  combinables pertenecen a `role-based-permissions`.
+- **MUST** el alta de empresa, el usuario administrador invitado y la invitación
+  se crean en una sola transacción. Motivo: un fallo no debe dejar empresa sin
+  administrador ni usuario huérfano.
+- **MUST** el usuario invitado se crea `INACTIVO`, sin `password_hash` y sin
+  permisos hasta que `company-admin-onboarding` acepte la invitación. Motivo:
+  la existencia del registro no debe habilitar login.
+- **MUST** la invitación guarda solo el SHA-256 del token; el token crudo no se
+  persiste, no se registra en logs y no viaja en la URL. La única entrega local
+  es la cookie flash `central_invitacion` (HttpOnly, SameSite=Strict, 60 s,
+  Path `/superadmin/empresas`). Motivo: una fuga de base de datos o de logs no
+  debe permitir activar cuentas.
+- **MUST** el NIF se normaliza a mayúsculas y sin espacios antes de guardarlo;
+  el CHECK `empresas_nif_normalizado` y el índice único lo respaldan. Motivo:
+  evitar duplicados por variantes de escritura.
+- **MUST** las acciones de superadmin quedan pendientes de auditoría avanzada
+  (`audit-trail-view`); hasta entonces no se añaden efectos que dependan de un
+  registro de auditoría. Motivo: riesgo aceptado y documentado en
+  `docs/risks-and-open-questions.md`.
 
 ## RLS diferida
 
@@ -38,8 +60,9 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST NOT** usar `prisma db push` para cambios compartidos. Motivo: no deja
   historial de migración.
 - **MUST** los CHECK que Prisma no modela (importe no negativo, email
-  normalizado y coherencia superadmin/empresa) se mantienen en SQL y se cubren
-  con `npm run test:db` al cambiar el esquema. Motivo: Prisma no los regenera.
+  normalizado, coherencia superadmin/empresa, NIF normalizado y fechas de
+  invitación) se mantienen en SQL y se cubren con `npm run test:db` al cambiar
+  el esquema. Motivo: Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
 - **MUST** solo un usuario `es_superadmin = true` puede tener `empresa_id`

@@ -95,13 +95,21 @@ npm run dev
 - Home: `http://localhost:3000/`
 - Login: `http://localhost:3000/login`
 - Panel privado: `http://localhost:3000/panel` (requiere sesión)
+- Panel de proveedor: `http://localhost:3000/superadmin` (solo
+  `es_superadmin` con `empresa_id` nulo)
+- Empresas: `http://localhost:3000/superadmin/empresas`
+- Planes: `http://localhost:3000/superadmin/planes`
 - Salud: `http://localhost:3000/health` (200 si PostgreSQL responde; 503
   `degraded` si no, sin filtrar credenciales)
 
 Las credenciales de ejemplo del seed son solo locales y viven en `.env`; nunca
 se commitean. La autenticación es propia (sin Auth.js): cookie
 `central_sesion` de 12 h, sesión revocable y `requireSession` en las rutas
-privadas.
+privadas. `/superadmin` añade `requireSuperadmin` (`es_superadmin` y
+`empresa_id` nulo); un usuario de empresa recibe 403 y un anónimo va al login.
+El alta de empresa genera un administrador `INACTIVO` sin contraseña y una
+invitación de 7 días; el enlace se muestra una sola vez desde una cookie flash
+y no se envía por email ni se puede recuperar.
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.

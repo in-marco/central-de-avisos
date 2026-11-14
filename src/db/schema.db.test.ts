@@ -9,17 +9,18 @@ afterAll(async () => {
 });
 
 describe("esquema base", () => {
-  it("crea las tablas planes, empresas, usuarios y sesiones", async () => {
+  it("crea las tablas planes, empresas, usuarios, sesiones e invitaciones", async () => {
     const rows = await getDb().$queryRaw<Array<{ table_name: string }>>`
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('planes', 'empresas', 'usuarios', 'sesiones')
+        AND table_name IN ('planes', 'empresas', 'usuarios', 'sesiones', 'invitaciones')
       ORDER BY table_name
     `;
 
     expect(rows.map((row) => row.table_name)).toEqual([
       "empresas",
+      "invitaciones",
       "planes",
       "sesiones",
       "usuarios",
@@ -35,6 +36,7 @@ describe("esquema base", () => {
       WHERE table_schema = 'public'
         AND (
           (table_name = 'usuarios' AND column_name = 'password_hash')
+          OR (table_name = 'empresas' AND column_name = 'direccion_fiscal')
           OR (
             table_name = 'sesiones'
             AND column_name IN (
@@ -45,11 +47,31 @@ describe("esquema base", () => {
               'revocada_en'
             )
           )
+          OR (
+            table_name = 'invitaciones'
+            AND column_name IN (
+              'empresa_id',
+              'usuario_id',
+              'tipo',
+              'token_hash',
+              'creado_en',
+              'expira_en',
+              'aceptada_en'
+            )
+          )
         )
       ORDER BY table_name, column_name
     `;
 
     expect(columns).toEqual([
+      { table_name: "empresas", column_name: "direccion_fiscal", is_nullable: "YES" },
+      { table_name: "invitaciones", column_name: "aceptada_en", is_nullable: "YES" },
+      { table_name: "invitaciones", column_name: "creado_en", is_nullable: "NO" },
+      { table_name: "invitaciones", column_name: "empresa_id", is_nullable: "NO" },
+      { table_name: "invitaciones", column_name: "expira_en", is_nullable: "NO" },
+      { table_name: "invitaciones", column_name: "tipo", is_nullable: "NO" },
+      { table_name: "invitaciones", column_name: "token_hash", is_nullable: "NO" },
+      { table_name: "invitaciones", column_name: "usuario_id", is_nullable: "NO" },
       { table_name: "sesiones", column_name: "creado_en", is_nullable: "NO" },
       { table_name: "sesiones", column_name: "expira_en", is_nullable: "NO" },
       { table_name: "sesiones", column_name: "revocada_en", is_nullable: "YES" },
@@ -65,12 +87,20 @@ describe("esquema base", () => {
         AND indexname IN (
           'sesiones_token_hash_key',
           'sesiones_usuario_id_idx',
-          'sesiones_expira_en_idx'
+          'sesiones_expira_en_idx',
+          'invitaciones_token_hash_key',
+          'invitaciones_empresa_id_idx',
+          'invitaciones_usuario_id_idx',
+          'invitaciones_expira_en_idx'
         )
       ORDER BY indexname
     `;
 
     expect(indexes.map((row) => row.indexname)).toEqual([
+      "invitaciones_empresa_id_idx",
+      "invitaciones_expira_en_idx",
+      "invitaciones_token_hash_key",
+      "invitaciones_usuario_id_idx",
       "sesiones_expira_en_idx",
       "sesiones_token_hash_key",
       "sesiones_usuario_id_idx",
@@ -79,10 +109,17 @@ describe("esquema base", () => {
     const foreignKeys = await getDb().$queryRaw<Array<{ conname: string; confdeltype: string }>>`
       SELECT conname, confdeltype::text AS confdeltype
       FROM pg_constraint
-      WHERE conname = 'sesiones_usuario_id_fkey'
+      WHERE conname IN (
+        'sesiones_usuario_id_fkey',
+        'invitaciones_empresa_id_fkey',
+        'invitaciones_usuario_id_fkey'
+      )
+      ORDER BY conname
     `;
 
     expect(foreignKeys).toEqual([
+      { conname: "invitaciones_empresa_id_fkey", confdeltype: "r" },
+      { conname: "invitaciones_usuario_id_fkey", confdeltype: "c" },
       { conname: "sesiones_usuario_id_fkey", confdeltype: "c" },
     ]);
   });
@@ -92,6 +129,9 @@ describe("esquema base", () => {
       SELECT conname
       FROM pg_constraint
       WHERE conname IN (
+        'empresas_nif_normalizado',
+        'invitaciones_aceptacion_posterior',
+        'invitaciones_expiracion_posterior',
         'planes_importe_mensual_no_negativo',
         'sesiones_expiracion_posterior',
         'usuarios_email_normalizado',
@@ -101,6 +141,9 @@ describe("esquema base", () => {
     `;
 
     expect(rows.map((row) => row.conname)).toEqual([
+      "empresas_nif_normalizado",
+      "invitaciones_aceptacion_posterior",
+      "invitaciones_expiracion_posterior",
       "planes_importe_mensual_no_negativo",
       "sesiones_expiracion_posterior",
       "usuarios_email_normalizado",
@@ -122,7 +165,7 @@ describe("esquema base", () => {
       const empresa = await tx.empresa.create({
         data: {
           nombre: `Empresa ${suffix}`,
-          nif: `B${suffix}`,
+          nif: `B${suffix.toUpperCase()}`,
           emailFacturacion: `facturacion-${suffix}@example.com`,
           planId: plan.id,
         },
@@ -174,7 +217,7 @@ describe("esquema base", () => {
         const empresa = await tx.empresa.create({
           data: {
             nombre: `Empresa email ${suffix}`,
-            nif: `E${suffix}`,
+            nif: `E${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-email-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -217,7 +260,7 @@ describe("esquema base", () => {
         const empresa = await tx.empresa.create({
           data: {
             nombre: `Empresa superadmin ${suffix}`,
-            nif: `S${suffix}`,
+            nif: `S${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-superadmin-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -260,7 +303,7 @@ describe("esquema base", () => {
         const empresa = await tx.empresa.create({
           data: {
             nombre: `Empresa duplicada ${suffix}`,
-            nif: `D${suffix}`,
+            nif: `D${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-duplicada-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -289,7 +332,7 @@ describe("esquema base", () => {
         await tx.empresa.create({
           data: {
             nombre: `Empresa protegida ${suffix}`,
-            nif: `R${suffix}`,
+            nif: `R${suffix.toUpperCase()}`,
             emailFacturacion: `facturacion-protegida-${suffix}@example.com`,
             planId: plan.id,
           },
@@ -310,7 +353,7 @@ describe("esquema base", () => {
       const empresa = await tx.empresa.create({
         data: {
           nombre: `Empresa sesión ${suffix}`,
-          nif: `S${suffix}`,
+          nif: `S${suffix.toUpperCase()}`,
           emailFacturacion: `facturacion-sesion-${suffix}@example.com`,
           planId: plan.id,
         },
@@ -428,5 +471,195 @@ describe("esquema base", () => {
     });
 
     expect(sesionesRestantes).toBe(0);
+  });
+
+  it("exige NIF normalizado en empresas", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan nif ${suffix}`, importeMensual: "10.00" },
+        });
+
+        return tx.empresa.create({
+          data: {
+            nombre: `Empresa nif ${suffix}`,
+            nif: ` b${suffix} `,
+            emailFacturacion: `facturacion-nif-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("valida la expiración y la aceptación de invitaciones", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan invitación ${suffix}`, importeMensual: "10.00" },
+        });
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa invitación ${suffix}`,
+            nif: `I${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-invitacion-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+        const usuario = await tx.usuario.create({
+          data: {
+            empresaId: empresa.id,
+            email: `invitado-${suffix}@example.com`,
+            nombre: "Invitado",
+            estado: "INACTIVO",
+          },
+        });
+        const creadaEn = new Date("2026-11-14T10:00:00.000Z");
+
+        return tx.invitacion.create({
+          data: {
+            empresaId: empresa.id,
+            usuarioId: usuario.id,
+            tokenHash: `invitacion-expirada-${suffix}`,
+            creadaEn,
+            expiraEn: new Date(creadaEn.getTime() - 1_000),
+          },
+        });
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan aceptada ${suffix}`, importeMensual: "10.00" },
+        });
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa aceptada ${suffix}`,
+            nif: `J${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-aceptada-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+        const usuario = await tx.usuario.create({
+          data: {
+            empresaId: empresa.id,
+            email: `aceptada-${suffix}@example.com`,
+            nombre: "Invitado",
+            estado: "INACTIVO",
+          },
+        });
+        const creadaEn = new Date("2026-11-14T10:00:00.000Z");
+
+        return tx.invitacion.create({
+          data: {
+            empresaId: empresa.id,
+            usuarioId: usuario.id,
+            tokenHash: `invitacion-aceptada-${suffix}`,
+            creadaEn,
+            expiraEn: new Date(creadaEn.getTime() + 60_000),
+            aceptadaEn: new Date(creadaEn.getTime() - 1_000),
+          },
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("exige token_hash único en invitaciones", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const plan = await tx.plan.create({
+          data: { nombre: `Plan token ${suffix}`, importeMensual: "10.00" },
+        });
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa token ${suffix}`,
+            nif: `K${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-token-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+        const usuario = await tx.usuario.create({
+          data: {
+            empresaId: empresa.id,
+            email: `token-${suffix}@example.com`,
+            nombre: "Invitado",
+            estado: "INACTIVO",
+          },
+        });
+        const creadaEn = new Date();
+        const expiraEn = new Date(creadaEn.getTime() + 60_000);
+        const tokenHash = `invitacion-token-${suffix}`;
+
+        await tx.invitacion.create({
+          data: {
+            empresaId: empresa.id,
+            usuarioId: usuario.id,
+            tokenHash,
+            creadaEn,
+            expiraEn,
+          },
+        });
+
+        return tx.invitacion.create({
+          data: {
+            empresaId: empresa.id,
+            usuarioId: usuario.id,
+            tokenHash,
+            creadaEn,
+            expiraEn,
+          },
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("borra las invitaciones en cascada al borrar el usuario", async () => {
+    const suffix = uniqueSuffix();
+
+    const restantes = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan cascada ${suffix}`, importeMensual: "10.00" },
+      });
+      const empresa = await tx.empresa.create({
+        data: {
+          nombre: `Empresa cascada ${suffix}`,
+          nif: `L${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-cascada-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+      const usuario = await tx.usuario.create({
+        data: {
+          empresaId: empresa.id,
+          email: `cascada-${suffix}@example.com`,
+          nombre: "Invitado",
+          estado: "INACTIVO",
+        },
+      });
+      const creadaEn = new Date();
+
+      await tx.invitacion.create({
+        data: {
+          empresaId: empresa.id,
+          usuarioId: usuario.id,
+          tokenHash: `invitacion-cascada-${suffix}`,
+          creadaEn,
+          expiraEn: new Date(creadaEn.getTime() + 60_000),
+        },
+      });
+
+      await tx.usuario.delete({ where: { id: usuario.id } });
+
+      return tx.invitacion.count({ where: { usuarioId: usuario.id } });
+    });
+
+    expect(restantes).toBe(0);
   });
 });

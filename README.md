@@ -3,10 +3,11 @@
 Central de avisos para empresas de servicios con técnicos de campo: avisos,
 partes y facturación en modo NO-VERIFACTU firmado (MVP).
 
-Estado actual: fundamento técnico con autenticación propia. La app Next.js
-arranca, PostgreSQL está conectado mediante Prisma y existen login con email y
-contraseña, sesiones revocables y un panel privado mínimo. Todavía no hay roles
-ni dominio funcional.
+Estado actual: fundamento técnico con autenticación propia y panel de
+proveedor. La app Next.js arranca, PostgreSQL está conectado mediante Prisma y
+existen login con email y contraseña, sesiones revocables, un panel privado
+mínimo y una superficie de superadmin para planes, alta de empresas e
+invitación de administradores. Todavía no hay roles ni dominio operativo.
 
 ## Requisitos
 
@@ -104,6 +105,27 @@ Con el seed aplicado, los usuarios demo son `admin@demo.local` (empresa) y
 - El rate limiting durable queda pendiente antes de exponer el login fuera de
   demo/producción; ver `docs/risks-and-open-questions.md`.
 
+## Panel de proveedor
+
+Con el seed aplicado, `superadmin@demo.local` puede abrir
+<http://localhost:3000/superadmin>. La entrada solo está disponible para
+`es_superadmin` con `empresa_id` nulo; un usuario de empresa recibe 403 y un
+anónimo va al login.
+
+- `/superadmin/planes` lista, crea y edita planes globales. El importe admite
+  coma o punto y hasta dos decimales; no se borran planes y solo los activos se
+  ofrecen en nuevas empresas.
+- `/superadmin/empresas` lista las empresas con su plan, importe, estado y la
+  invitación de su administrador.
+- `/superadmin/empresas/nueva` da de alta la empresa, su administrador
+  `INACTIVO` sin contraseña y una invitación de 7 días en una sola transacción.
+  NIF y email se normalizan; NIF y email global son únicos.
+- Tras el alta, el detalle muestra una sola vez el enlace
+  `/invitacion/<token>` desde una cookie flash de 60 s. No se envía email real,
+  no se guarda el token crudo y el enlace no se puede recuperar.
+- Aceptar la invitación, definir contraseña, roles y facturación mensual quedan
+  fuera de este slice.
+
 ## Desarrollo
 
 ```bash
@@ -113,6 +135,9 @@ npm run dev
 - Home: <http://localhost:3000/>
 - Login: <http://localhost:3000/login>
 - Panel privado: <http://localhost:3000/panel> (requiere sesión)
+- Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
+- Empresas: <http://localhost:3000/superadmin/empresas>
+- Planes: <http://localhost:3000/superadmin/planes>
 - Salud: <http://localhost:3000/health>
 
 `GET /health` comprueba PostgreSQL con un timeout de 2 s:
@@ -169,9 +194,9 @@ npm run test:db
 ```
 
 Se ejecutan en serie dentro de transacciones con rollback y cubren constraints,
-FKs, aislamiento entre dos empresas y autenticación (credenciales correctas e
-incorrectas, email inexistente, usuario inactivo, empresa suspendida,
-superadmin, sesión caducada/revocada, logout y token hasheado).
+FKs, aislamiento entre dos empresas, autenticación (credenciales, estados,
+caducidad, revocación y token hasheado) y superadmin (planes, altas,
+duplicados, plan inactivo, invitación hasheada, estados y rollback).
 
 ## Estructura
 
@@ -182,6 +207,11 @@ superadmin, sesión caducada/revocada, logout y token hasheado).
 - `src/app/api/auth/` — route handlers de login y logout (`POST`).
 - `src/lib/auth/` — hash scrypt, tokens, sesiones, cookie, same-origin y
   validación de `next`.
+- `src/app/superadmin/` — `(protected)/` con layout, empresas, planes, detalle
+  y componentes; `forbidden.tsx` queda por encima del layout que ejecuta el
+  guard.
+- `src/app/api/superadmin/` - mutaciones `POST` de empresas y planes.
+- `src/lib/superadmin/` - autorización, validación, planes, altas transaccionales e invitaciones.
 - `src/lib/health.ts` — construcción del payload de salud.
 - `src/lib/db-health.ts` — comprobación `SELECT 1` con timeout.
 - `src/db/client.ts` — cliente Prisma perezoso con driver adapter `pg`.

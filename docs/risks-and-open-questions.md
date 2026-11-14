@@ -15,7 +15,7 @@
 - Formato de serie y numeración por empresa y año.
 - Retención y borrado de fotos de partes y PDFs.
 - Contrato de tratamiento de datos y región del proveedor de IA.
-- Política de invitaciones: caducidad y reenvío.
+- Política de reenvío/regeneración de invitaciones caducadas (la caducidad ya está fijada en 7 días).
 - Reasignación automática de avisos cuando se desactiva un técnico.
 
 ## Later / Not MVP
@@ -59,6 +59,25 @@
 - **Credenciales de seed:** las contraseñas demo viven en `.env` local y `.env.example`. Mitigación: son solo locales, el seed rechaza producción y `.env` está ignorado; no reutilizarlas.
 - **CSRF y open redirect:** login/logout son POST con comprobación de `Origin` cuando llega, `SameSite=Lax` y `next` validado. Riesgo residual: un proxy que no normalice cabeceras `x-forwarded-*` debe revisarse al desplegar.
 
+- **Enlace de invitación irrecuperable:** el token crudo solo se muestra una vez
+  desde una cookie flash de 60 s; si se pierde, no hay reenvío, regeneración ni
+  email real en este slice. Mitigación: el superadmin debe copiarlo en el
+  momento; la feature de onboarding definirá el reenvío.
+- **Invitaciones sin auditoría avanzada:** crear empresas, editar planes y
+  generar invitaciones no deja todavía un registro append-only. Mitigación:
+  queda en `audit-trail-view`; no se añaden acciones que dependan de auditoría.
+- **Cambio de importe sin histórico:** editar un plan cambia el importe que
+  verán futuras altas; no hay versionado de precios. Mitigación: la facturación
+  mensual congelará el importe aplicable al generar la cuota.
+- **Superficie de proveedor sensible:** un fallo en `requireSuperadmin` expone
+  datos de todas las empresas. Mitigación: guard en layout/páginas/route
+  handlers, `forbidden()` verificado con 403, same-origin y tests de
+  autorización.
+- **Normalización de NIF en la migración:** si una base existente tuviera dos
+  NIF que solo difieren en mayúsculas o espacios, la normalización chocaría con
+  el índice único. Mitigación: revisar duplicados antes de desplegar; en local
+  solo existía el NIF demo.
+
 ## Research Tasks
 
 - Sesión con gestoría sobre emisión en nombre de terceros, firma y NO-VERIFACTU.
@@ -75,3 +94,10 @@
 - **Desarrollo local:** PostgreSQL nativo 18.7; no se requiere Docker en este repositorio.
 - **Autenticación:** sesión propia opaca en PostgreSQL, sin Auth.js; scrypt nativo versionado, cookie `HttpOnly`/`SameSite=Lax` de 12 h, revocación por logout y validación de usuario/empresa en cada petición. Ver `ARCHITECTURE.md` y `CONSTRAINTS.md`.
 - **Seed local:** `tsx` 4.23.15 + `prisma/seed.ts`, idempotente con `upsert`, rechaza producción y no entra en `init.sh`.
+- **Invitación de administrador:** caducidad de 7 días, token opaco hasheado
+  con SHA-256, usuario `INACTIVO` sin contraseña y enlace local mostrado una
+  sola vez desde una cookie flash. La aceptación queda para
+  `company-admin-onboarding`.
+- **Autorización de superadmin:** `forbidden()` con `experimental.authInterrupts`
+  funciona de forma fiable en Next.js 16.4.6 y devuelve 403; no se usó la
+  alternativa de render manual. Ver `ARCHITECTURE.md`.

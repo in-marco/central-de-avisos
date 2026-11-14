@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/current-session";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,24 @@ export default async function PanelPage() {
           </div>
         </dl>
       </section>
+
+      {session.esSuperadmin ? (
+        <section className="rounded-lg border border-border bg-surface p-6 sm:p-8">
+          <h2 className="text-lg font-semibold text-primary">
+            Herramientas de proveedor
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Gestiona el catálogo de planes y da de alta empresas con su
+            administrador invitado.
+          </p>
+          <Link
+            className="mt-4 inline-flex h-12 items-center justify-center rounded-md bg-primary px-5 text-base font-medium text-white transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-11"
+            href="/superadmin"
+          >
+            Abrir panel de proveedor
+          </Link>
+        </section>
+      ) : null}
     </div>
   );
 }

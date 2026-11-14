@@ -51,11 +51,24 @@
   `SUSPENDIDA` y sesión caducada/revocada no autentican en cada petición.
 - **Rutas:** `requireSession` en layouts/páginas privados; sin middleware como
   autorización. Login/logout son `POST`, con same-origin y `next` validado.
+- **Superadmin:** `/superadmin` usa `requireSuperadmin` (`es_superadmin` y
+  `empresa_id` nulo). `forbidden()` con `experimental.authInterrupts` devuelve
+  403 antes de streaming en Next.js 16.4.6 y renderiza
+  `src/app/superadmin/forbidden.tsx`; el layout con el guard está en
+  `src/app/superadmin/(protected)/layout.tsx`, por debajo del boundary, para
+  que el throw no caiga en la página 403 por defecto. Verificado con HTTP real
+  y navegador headless. Los route handlers `/api/superadmin/*` comprueban
+  same-origin, guard, `POST` y 405 en `GET`.
+- **Invitaciones:** token opaco de 32 bytes; en `invitaciones` solo SHA-256,
+  caducidad de 7 días y estado derivado. El enlace local se entrega una sola vez
+  en la cookie flash `central_invitacion` (`HttpOnly`, `SameSite=Strict`,
+  `Path=/superadmin/empresas`, 60 s). No hay email real, reenvío ni
+  recuperación.
 - **Pendiente:** rate limiting durable, limpieza programada de sesiones y
-  auditoría de accesos. Las invitaciones y los roles combinables siguen fuera de
-  este slice.
-- Planificado: invitaciones por email, roles administrador/oficina/técnico/
-  cliente, superadmin separado y auditoría del acceso del proveedor.
+  auditoría de accesos. La aceptación de invitaciones y los roles combinables
+  siguen fuera de este slice.
+- Planificado: email real de invitaciones, roles administrador/oficina/técnico/
+  cliente y auditoría del acceso del proveedor.
 
 ## Deployment and Operations
 
@@ -68,7 +81,10 @@
 ## Testing and Verification
 
 - **Unitarias:** cálculo de horas, ajustes justificados, totales, IVA, numeración y máquina de estados. `npm test` no usa base de datos.
-- **Integración:** esquema, constraints, FKs, aislamiento entre empresas, aprobación → factura, anulación y generación mensual. `npm run test:db` usa PostgreSQL real y transacciones con rollback.
+- **Integración:** esquema, constraints, FKs, aislamiento entre empresas,
+  superadmin (planes, altas, duplicados, plan inactivo, invitación hasheada,
+  estados y rollback), aprobación → factura, anulación y generación mensual.
+  `npm run test:db` usa PostgreSQL real y transacciones con rollback.
 - **E2E:** ciclo completo con Playwright en el primer flujo con interacción de cliente (bandeja/parte del técnico). En este slice, login → `/panel` → logout se verifica con HTTP real, cookie jar y comprobación de layout/teclado en navegador headless; Playwright no se añade todavía y no debe exigir base de datos en `init.sh`.
 - **Seed:** `tsx` 4.23.15 ejecuta `prisma/seed.ts`; es idempotente, lee `SEED_*` y rechaza producción. No se ejecuta en el gate.
 - **Seguridad:** pruebas de autenticación, revocación y aislamiento; ninguna ruta debe confiar en el cliente.

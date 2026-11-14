@@ -57,7 +57,7 @@ async function createFixture(
   const empresa = await tx.empresa.create({
     data: {
       nombre: `Empresa auth ${suffix}`,
-      nif: `A${suffix}`,
+      nif: `A${suffix.toUpperCase()}`,
       emailFacturacion: `facturacion-auth-${suffix}@example.com`,
       planId: plan.id,
       estado: options.empresaEstado ?? "ACTIVA",

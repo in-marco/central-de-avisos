@@ -60,6 +60,7 @@ async function main() {
         where: { nif: "B12345678" },
         update: {
           nombre: "Empresa Demo",
+          direccionFiscal: "Calle Mayor 1, 28013 Madrid",
           emailFacturacion: "facturacion@demo.local",
           planId: plan.id,
           estado: "ACTIVA",
@@ -67,6 +68,7 @@ async function main() {
         create: {
           nombre: "Empresa Demo",
           nif: "B12345678",
+          direccionFiscal: "Calle Mayor 1, 28013 Madrid",
           emailFacturacion: "facturacion@demo.local",
           planId: plan.id,
         },

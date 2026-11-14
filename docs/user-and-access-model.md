@@ -60,16 +60,27 @@ Notas:
 
 ## Comportamiento implementado en este slice
 
-- Login con email y contraseña; no hay autoregistro ni invitaciones todavía.
+- Login con email y contraseña; no hay autoregistro abierto.
 - La sesión es opaca, absoluta y dura 12 h; no se renueva de forma deslizante.
   Se permiten sesiones concurrentes y el logout revoca solo la actual.
 - Cada petición privada valida la sesión en base de datos y comprueba que el
   usuario siga `ACTIVO` y su empresa `ACTIVA`. Suspender la empresa o
   desactivar al usuario invalida sus sesiones existentes.
 - El superadmin usa el mismo flujo con `empresa_id` nulo y `es_superadmin =
-  true`; el panel muestra “Proveedor SaaS” en lugar de empresa.
-- Roles combinables, permisos por rol, invitaciones, recuperación de contraseña
-  y revocación masiva quedan fuera de esta feature.
+  true`; el panel muestra «Proveedor SaaS» en lugar de empresa.
+- `/superadmin` y `/api/superadmin/*` exigen `es_superadmin` con
+  `empresa_id` nulo. Un usuario de empresa recibe 403; un anónimo va al login.
+- El superadmin crea y edita el catálogo global de planes. No los borra.
+- El alta de empresa crea en una transacción la empresa, un administrador
+  `INACTIVO` sin `password_hash` y una invitación de 7 días. El email del
+  invitado es el email único de `usuarios`.
+- La invitación guarda solo el SHA-256 del token. El enlace local se muestra
+  una vez desde una cookie flash de 60 s; no se envía por email y no se puede
+  recuperar.
+- Aceptar la invitación, definir contraseña, activar al invitado y entrar en su
+  empresa pertenecen a `company-admin-onboarding`. Los roles combinables,
+  permisos por rol, recuperación de contraseña y revocación masiva siguen
+  fuera de este slice.
 
 ## Revocation / Expiry
 
@@ -78,7 +89,8 @@ Notas:
 - Los avisos abiertos de un técnico desactivado se devuelven a la bolsa o se reasignan.
 - Retirar el acceso de un usuario de cliente no borra avisos ni facturas ya emitidas.
 - Suspender una empresa bloquea el acceso de todos sus usuarios, pero conserva sus datos y facturas.
-- Las invitaciones caducan si no se aceptan en un plazo definido en implementación.
+- Las invitaciones caducan a los 7 días si no se aceptan. El enlace mostrado
+  desde la cookie flash no se puede recuperar ni reenviar en este slice.
 
 ## Edge Cases
 

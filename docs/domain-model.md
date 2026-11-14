@@ -3,7 +3,8 @@
 ## Core Concepts
 
 ### Empresa de servicios (tenant)
-- Datos fiscales: razón social, NIF, dirección, email de facturación.
+- Datos fiscales: razón social, NIF normalizado, dirección fiscal, email de
+  facturación.
 - Plan contratado, estado activo/suspendido.
 - Modo fiscal (`NO_VERIFACTU` en el MVP).
 - Tarifa horaria por defecto.
@@ -13,6 +14,15 @@
 - Email único global, contraseña, estado.
 - Pertenece a una única empresa, salvo el superadmin del proveedor.
 - Puede tener varios roles combinables: administrador, oficina, técnico, cliente.
+
+### Invitación
+- Pertenece a una empresa y a un usuario invitado.
+- Tipo `ADMINISTRADOR_EMPRESA` en este slice.
+- Guarda solo el hash del token de invitación, la fecha de creación, la
+  caducidad (7 días) y la fecha de aceptación opcional.
+- Estado derivado: `Pendiente`, `Caducada` o `Aceptada`.
+- La aceptación y el alta de contraseña pertenecen a la activación del
+  administrador; la invitación no concede permisos por sí misma.
 
 ### Cliente
 - Pertenece a una empresa de servicios.
@@ -71,7 +81,10 @@
 
 ## Relationships
 
-- Una empresa de servicios tiene muchos usuarios, clientes, avisos y facturas.
+- Una empresa de servicios tiene muchos usuarios, clientes, avisos, facturas
+  e invitaciones.
+- Una invitación apunta a un usuario; al borrar el usuario se elimina en
+  cascada, pero la empresa no se puede borrar mientras conserve invitaciones.
 - Un cliente pertenece a una empresa y tiene muchas sedes y contactos.
 - Una sede pertenece a un cliente.
 - Un aviso pertenece a un cliente y a una sede.
@@ -131,6 +144,19 @@ Borrador ──firmar/emitir──> Emitida ──anular──> Anulada
 - **Emitida:** firmada e inmutable; consume número de serie.
 - **Anulada:** conserva el registro y el número; no se borra.
 
+### Invitación
+
+```txt
+Pendiente ──aceptar──> Aceptada
+    │
+    └──caducar──> Caducada
+```
+
+- **Pendiente:** no aceptada y dentro del plazo de 7 días.
+- **Caducada:** no aceptada y con `expira_en <= ahora`.
+- **Aceptada:** tiene `aceptada_en`; el alta de contraseña y la activación del
+  usuario se completan en el onboarding.
+
 ## Important Scenarios
 
 1. **Aviso desde portal:** el cliente crea el aviso con sede y contacto; la oficina lo valida y lo pone en bolsa.
@@ -156,3 +182,6 @@ Borrador ──firmar/emitir──> Emitida ──anular──> Anulada
 - Cambio de datos fiscales del cliente después de emitir: no altera facturas pasadas; requiere rectificativa fuera del MVP.
 - Cambio de hora (DST) en Europe/Madrid: horas calculadas sobre instantes, no sobre texto.
 - Anulación de factura: el número no se reutiliza y el registro firmado se conserva.
+- Invitación no recuperable: si caduca la cookie flash, el enlace local ya no
+  se puede mostrar; reenviar o regenerar la invitación queda fuera de este
+  slice.

@@ -5,11 +5,11 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `email-password-auth` en `accepted`.
-- Current next ready feature: `superadmin-company-plan`.
+- Current feature: `superadmin-company-plan` en `accepted`.
+- Current next ready feature: `company-admin-onboarding`.
 - Current blocker: none.
-- Last verified at: 2026-11-14 01:15 (email-password-auth aceptada, entorno local Windows)
-- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
+- Last verified at: 2026-11-14 03:35 (superadmin-company-plan aceptada, entorno local Windows)
+- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío ni email real; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
 
@@ -118,3 +118,52 @@
 - Files or artifacts updated: `feature_list.json` (`email-password-auth` a `accepted` con evidencia) y `PROGRESS.md`.
 - Known risk or unresolved issue: rate limiting durable y limpieza de sesiones diferidos; credenciales demo solo locales; `x-forwarded-*` a revisar detrás de proxy; RLS diferida; 7 vulnerabilidades moderadas de `minimatch` en tooling.
 - Next best step: ejecutar `feature-spec` para `superadmin-company-plan`.
+
+### Session 009
+
+- Date: 2026-11-14
+- Goal: implementar `superadmin-company-plan` según `docs/specs/superadmin-company-plan.md`.
+- Completed: superficie `/superadmin` (resumen, empresas, alta, detalle, planes y 403) con `requireSuperadmin` (`es_superadmin` y `empresa_id` nulo, sin roles); `forbidden()` con `experimental.authInterrupts` verificado con 403 real; route handlers `POST /api/superadmin/planes` y `/api/superadmin/empresas` con same-origin, guard, 405 en `GET`, 303/errores por código y sin JSON; planes globales con alta/edición, importe decimal validado con `BigInt` y sin borrado; alta transaccional de empresa + administrador `INACTIVO` sin contraseña + invitación de 7 días con token SHA-256; cookie flash `central_invitacion` de 60 s; listado y detalle con estado derivado; enlace a `/superadmin` solo en `/panel` de superadmin; migración, seed, tests, smoke y documentación durable.
+- Environment/versions: Windows, Node 26.13.1, npm 11.20.0, Next.js 16.4.6, React 19.3.1, Prisma 7.10.1, `@prisma/client` 7.10.1, `@prisma/adapter-pg` 7.10.1, tsx 4.23.15 y PostgreSQL 18.7 nativo en `localhost:5432`. Sin Docker, Auth.js, Playwright ni email real.
+- Verification run:
+  - `npm run db:deploy`: migración `20261114015000_superadmin_invitations` aplicada; `npm run db:status` → "Database schema is up to date!" (4 migraciones).
+  - Base vacía `central_de_avisos_superadmin_verify`: `db:deploy` aplicó las 4 migraciones, `db:status` up to date y `test:db` 44 tests; base eliminada después con `DROP DATABASE`.
+  - `npm run test:db`: 5 archivos/44 tests verdes (13 auth + 19 esquema + 3 aislamiento + 3 planes + 6 altas) en `central_de_avisos` y en la base vacía. Cubre planes, NIF normalizado, dirección fiscal, usuario `INACTIVO` sin hash, token hasheado, caducidad de 7 días, estados de invitación, duplicados, plan inactivo, rollback y checks/FKs/índices nuevos.
+  - `npm run db:seed` dos veces: 1 plan, 1 empresa, 2 usuarios y 0 invitaciones; la empresa demo conserva dirección fiscal; sin duplicados ni contraseñas impresas.
+  - `npm run lint`, `npm run typecheck`, `npm test` (9 archivos/53 tests) y `npm run build`: exit 0. Build con `/superadmin`, empresas, alta, detalle, planes, edición y las dos rutas `/api/superadmin/*`.
+  - `init.sh` sin `.env` ni `DATABASE_URL` (renombrado y restaurado): `db:generate` + gate, exit 0, sin conectar a PostgreSQL ni arrancar servicios. `init.sh` con `.env` y PostgreSQL real: exit 0; no ejecuta seed ni servidor.
+  - Smoke HTTP con `next start` en :3001 y curl: anónimo `/superadmin` 307 a `/login?next=%2Fsuperadmin`; superadmin 200; usuario normal `/panel` 200 sin enlace de proveedor y `/superadmin/empresas` 403 (contenido 403); `forbidden()` funcionó sin fallback. `GET /api/superadmin/empresas` 405 `Allow: POST`; cross-origin 403.
+  - Smoke de planes: `49,90` → 303 y 49.90 en BD; `-1` y `49.999` → `error=importe` sin filas; nombre duplicado → `error=campos`; edición a 59,95 persistida; plan desactivado con `activo=f`.
+  - Smoke de alta: 303 al detalle con `Set-Cookie` flash `HttpOnly; SameSite=strict; Path=/superadmin/empresas; Max-Age=60`; HTML con `/invitacion/<token>` y sin token en la URL; `psql` confirmó NIF normalizado, dirección, plan, usuario `INACTIVO` con `password_hash` nulo, `aceptada_en` nulo, `expira_en - creado_en = 7 days`, hash de 64 caracteres y 0 filas con el token crudo. Duplicados NIF/email y plan inactivo devolvieron `error=nif/email/plan` sin filas parciales. Datos de smoke limpiados; BD final 1/1/2/0.
+  - Revisión real a 390 px con Edge headless/CDP: las tres vistas sin scroll horizontal (390=390), controles de 48 px (checkbox dentro de etiqueta de 48), tabulación coherente y foco visible de 2 px en latón (#C08A3E). Capturas guardadas temporalmente y servidor/Edge detenidos.
+- Evidence captured: migración y status; 44 tests de integración en dos bases; seed idempotente; 53 tests unitarios; build con las rutas nuevas; `init.sh` con y sin entorno; códigos y cabeceras HTTP; consultas psql de empresa/usuario/invitación; revisión 390 px/teclado.
+- Files or artifacts updated: `prisma/schema.prisma`, `prisma/migrations/20261114015000_superadmin_invitations/migration.sql`, `prisma/seed.ts`, `src/lib/superadmin/*` (authorization, validation, plans, companies, invitations, db-errors y tests), `src/app/superadmin/*` (layout, resumen, forbidden, empresas, planes y componentes), `src/app/api/superadmin/empresas/route.ts`, `src/app/api/superadmin/planes/route.ts`, `src/app/panel/page.tsx`, `src/app/globals.css`, `src/db/schema.db.test.ts`, `src/db/tenant-isolation.db.test.ts`, `src/lib/auth/auth.db.test.ts`, `next.config.ts`, `init.sh`, `README.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CONSTRAINTS.md`, `docs/domain-model.md`, `docs/user-and-access-model.md`, `docs/technical-discovery.md`, `docs/risks-and-open-questions.md`, `docs/specs/superadmin-company-plan.md`, `PROGRESS.md` y `feature_list.json`.
+- Known risk or unresolved issue: enlace de invitación irrecuperable al caducar la cookie de 60 s; sin reenvío/regeneración ni email real; sin auditoría avanzada de acciones de superadmin; cambio de importe de plan sin histórico; RLS diferida; rate limiting y limpieza de sesiones diferidos; 7 vulnerabilidades moderadas de `minimatch` en tooling.
+- Next best step: validación independiente de `superadmin-company-plan`; si se acepta, ejecutar `feature-spec` para `company-admin-onboarding`.
+
+### Session 010
+
+- Date: 2026-11-14
+- Goal: aplicar el brief de reparación del validador sobre `superadmin-company-plan` sin ampliar alcance.
+- Completed: layout, página de resumen, `empresas`, `planes` y `_components` movidos a `src/app/superadmin/(protected)/`, dejando `src/app/superadmin/forbidden.tsx` por encima del layout que ejecuta `requireSuperadmin`; las URLs siguen siendo `/superadmin`, `/superadmin/empresas`, `/superadmin/empresas/nueva`, `/superadmin/empresas/[id]`, `/superadmin/planes` y `/superadmin/planes/[id]`. `init.sh` corregido a UTF-8: el mensaje de `/panel` dice `sesión` y no queda ningún U+FFFD. Documentación durable actualizada con el motivo del route group.
+- Verification run:
+  - `npm run lint`, `npm run typecheck`, `npm test` (9 archivos/53 tests), `npm run test:db` (5 archivos/44 tests) y `npm run build`: exit 0. Build Next.js 16.4.6 con las mismas rutas públicas y las dos rutas `/api/superadmin/*`.
+  - `init.sh` con Git Bash: `db:generate` + lint + typecheck + 53 tests + build, exit 0, sin arrancar servicios; salida final con `/panel (requiere sesión)` y sin U+FFFD en el archivo.
+  - Smoke con `next start -p 3100` y `curl --max-time 10`: anónimo `/superadmin` y `/superadmin/empresas` → 307 `Location: /login?next=%2Fsuperadmin`; usuario de empresa `/superadmin/empresas` → 403 con la UI propia, comprobada con Edge headless/CDP (el `h1` es `403 · No autorizado`, aparece `Acceso restringido`, el botón `Volver a mi panel` apunta a `/panel` y no se muestra la página por defecto en inglés); POST `/api/superadmin/empresas` con usuario de empresa → 403; GET de `/api/superadmin/empresas` y `/api/superadmin/planes` → 405 con `Allow: POST`; cross-origin → 403; superadmin `/superadmin`, `/superadmin/empresas` y `/superadmin/planes` → 200; POST cross-origin con superadmin → 403.
+  - Árboles de procesos de Next y Edge detenidos; puertos 3100 y 9223 libres; cookies, logs y perfil temporal de Edge eliminados del directorio temporal.
+  - `psql`: la base `central_de_avisos` queda en 1 plan, 1 empresa, 2 usuarios y 0 invitaciones; no se crearon datos de prueba en esta sesión.
+- Evidence captured: 403 real con boundary propio (`(protected)` bajo `forbidden.tsx`), 307 anónimo, 200 superadmin, 403/405/cross-origin de route handlers, gate e `init.sh` verdes, build con rutas intactas y base limpia.
+- Files or artifacts updated: `src/app/superadmin/(protected)/layout.tsx`, `src/app/superadmin/(protected)/page.tsx`, `src/app/superadmin/(protected)/empresas/*`, `src/app/superadmin/(protected)/planes/*`, `src/app/superadmin/(protected)/_components/ui.tsx`, `init.sh`, `ARCHITECTURE.md`, `README.md`, `docs/technical-discovery.md`, `docs/specs/superadmin-company-plan.md`, `feature_list.json`, `PROGRESS.md`.
+- Known risk or unresolved issue: se mantienen los riesgos previos (enlace de invitación irrecuperable, sin reenvío ni email real, sin auditoría de superadmin, cambio de importe sin histórico, RLS, rate limiting y limpieza de sesiones diferidos). No se detectó ninguno nuevo.
+- Next best step: revalidación independiente de `superadmin-company-plan`; si se acepta, ejecutar `feature-spec` para `company-admin-onboarding`.
+
+### Session 011
+
+- Date: 2026-11-14
+- Goal: revalidación independiente de `superadmin-company-plan` tras la reparación.
+- Result: `accept`; sin hallazgos bloqueantes. El 403 propio y el UTF-8 de `init.sh` quedan verificados.
+- Verification run: `lint`, `typecheck`, `test` (53), `test:db` (44) y `build` exit 0; `init.sh` con y sin `DATABASE_URL` exit 0; migración desde base vacía con 4 migraciones y `db:status` up to date; base temporal eliminada.
+- Evidence captured: anónimo 307 a login; superadmin 200 en `/superadmin`, empresas, alta, detalle, planes y edición; usuario de empresa 403 con UI propia y enlace `/panel`; route handlers 403; GET APIs 405; cross-origin 403; `init.sh` sin U+FFFD; BD final 1 plan, 1 empresa, 2 usuarios, 0 invitaciones y 0 sesiones; sin procesos ni bases de prueba.
+- Files or artifacts updated: `feature_list.json` (`superadmin-company-plan` a `accepted` con evidencia) y `PROGRESS.md`.
+- Known risk or unresolved issue: el enlace de invitación sigue disponible mientras dure la cookie flash de 60 s, aunque la documentación habla de “una sola vez”; sin reenvío, email real ni auditoría de superadmin. RLS, rate limiting y limpieza de sesiones siguen diferidos.
+- Next best step: ejecutar `feature-spec` para `company-admin-onboarding`.
