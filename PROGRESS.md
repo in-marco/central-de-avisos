@@ -295,3 +295,11 @@
 - Known risk or unresolved issue: reglas de tarifa distintas entre empresa y cliente (anotado en `docs/risks-and-open-questions.md`). La prueba con navegador real se hizo en la revalidación independiente posterior (ver abajo).
 - Result: rebase completado por el orquestador (un solo commit sobre `566fc51`). Revalidación independiente de la integración: `accept`, sin hallazgos críticos, altos ni medios. Revisó que no se perdiera nada de ninguna feature; probó las 7 migraciones desde una base vacía (orden correcto, `migrate diff` vacío, `test:db` 102/102); `init.sh` sin `DATABASE_URL` (209 tests y build); `validate-smoke.sh` 64/64; y Edge headless por CDP 38/38: administrador (navegación Inicio/Clientes/Usuarios/Empresa, alta de cliente con clic real, segunda sede, segundo contacto, edición de datos y cambio y restauración de la tarifa de empresa), oficina (Clientes sí; Empresa y Usuarios 403; error de contacto sin teléfono ni email), técnico (403 en clientes), vista a 390 px sin desbordes y los 15 POST con `Origin: http://localhost:3104`.
 - Next best step: publicar la PR de `client-records`; tras el merge, `office-aviso-creation` y `client-portal-invitation`. Pendientes de severidad baja: `?error=__proto__` provoca 500 en las páginas de clientes y usuarios (buscar mensajes con `Object.hasOwn`).
+
+### Session 023
+
+- Date: 2026-11-14
+- Goal: ajustar el plan de features para llegar antes al panel de avisos pendientes.
+- Completed: por decisión del usuario, `aviso-validation-pool` deja de depender de `client-aviso-creation` y depende solo de `office-aviso-creation`. El camino hasta `technician-inbox` queda en `office-aviso-creation` → `aviso-validation-pool` → `technician-inbox`, y las features del portal de cliente avanzan en paralelo. Cuando exista `client-aviso-creation`, sus avisos entrarán en la misma bandeja de validación.
+- Verification run: `feature_list.json` válido y sin ciclos de dependencias.
+- Next best step: github-flow en paralelo para `office-aviso-creation` y `client-portal-invitation`.
