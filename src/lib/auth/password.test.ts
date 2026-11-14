@@ -4,8 +4,10 @@ import {
   hashPassword,
   isEmailLengthValid,
   isPasswordLengthValid,
+  NEW_PASSWORD_MIN_LENGTH,
   normalizeEmail,
   PASSWORD_MAX_LENGTH,
+  validateNewPassword,
   verifyPassword,
 } from "./password";
 
@@ -72,5 +74,33 @@ describe("hash scrypt versionado", () => {
     await expect(
       hashPassword("x".repeat(PASSWORD_MAX_LENGTH + 1)),
     ).rejects.toThrow();
+  });
+});
+
+describe("política de contraseña nueva", () => {
+  it("acepta entre 12 y 128 caracteres con confirmación idéntica", () => {
+    const twelve = "a".repeat(NEW_PASSWORD_MIN_LENGTH);
+    const max = "b".repeat(PASSWORD_MAX_LENGTH);
+
+    expect(validateNewPassword(twelve, twelve)).toEqual({ ok: true });
+    expect(validateNewPassword(max, max)).toEqual({ ok: true });
+  });
+
+  it("rechaza contraseñas cortas, largas o con confirmación distinta", () => {
+    const short = "a".repeat(NEW_PASSWORD_MIN_LENGTH - 1);
+    const long = "a".repeat(PASSWORD_MAX_LENGTH + 1);
+
+    expect(validateNewPassword("", "")).toEqual({ ok: false, error: "corta" });
+    expect(validateNewPassword(short, short)).toEqual({
+      ok: false,
+      error: "corta",
+    });
+    expect(validateNewPassword(long, long)).toEqual({
+      ok: false,
+      error: "larga",
+    });
+    expect(
+      validateNewPassword("contraseña-segura-1", "contraseña-segura-2"),
+    ).toEqual({ ok: false, error: "distinta" });
   });
 });

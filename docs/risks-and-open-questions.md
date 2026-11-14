@@ -62,7 +62,18 @@
 - **Enlace de invitación irrecuperable:** el token crudo solo se muestra una vez
   desde una cookie flash de 60 s; si se pierde, no hay reenvío, regeneración ni
   email real en este slice. Mitigación: el superadmin debe copiarlo en el
-  momento; la feature de onboarding definirá el reenvío.
+  momento. La activación (`company-admin-onboarding`) no añadió reenvío ni
+  regeneración: una invitación perdida o caducada no se puede sustituir desde
+  la interfaz. Pendiente de una feature de gestión de invitaciones.
+- **Token de invitación en el path del enlace:** el enlace `/invitacion/<token>`
+  lleva el token en la URL, que puede quedar en el historial del navegador o
+  en logs de un proxy. Mitigación: un solo uso, 7 días, `Referrer-Policy:
+  no-referrer`, `no-store`, `noindex`, token en el cuerpo del POST y nunca en
+  la redirección final; `next start` no lo registra (verificado). Revisar los
+  logs del proxy al desplegar.
+- **Aceptación sin auditoría:** la activación del administrador no deja un
+  registro append-only (solo `aceptada_en`). Mitigación: queda en
+  `audit-trail-view`.
 - **Invitaciones sin auditoría avanzada:** crear empresas, editar planes y
   generar invitaciones no deja todavía un registro append-only. Mitigación:
   queda en `audit-trail-view`; no se añaden acciones que dependan de auditoría.
@@ -96,8 +107,10 @@
 - **Seed local:** `tsx` 4.23.15 + `prisma/seed.ts`, idempotente con `upsert`, rechaza producción y no entra en `init.sh`.
 - **Invitación de administrador:** caducidad de 7 días, token opaco hasheado
   con SHA-256, usuario `INACTIVO` sin contraseña y enlace local mostrado una
-  sola vez desde una cookie flash. La aceptación queda para
-  `company-admin-onboarding`.
+  sola vez desde una cookie flash.
+- **Activación del invitado:** aceptación atómica y de un solo uso que activa
+  al usuario y crea su sesión; contraseña nueva de 12 a 128 caracteres; una
+  empresa suspendida bloquea la aceptación. Ver `ARCHITECTURE.md`.
 - **Autorización de superadmin:** `forbidden()` con `experimental.authInterrupts`
   funciona de forma fiable en Next.js 16.4.6 y devuelve 403; no se usó la
   alternativa de render manual. Ver `ARCHITECTURE.md`.

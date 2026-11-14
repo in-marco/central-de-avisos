@@ -99,6 +99,8 @@ npm run dev
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
 - Planes: `http://localhost:3000/superadmin/planes`
+- Activación de invitado: `http://localhost:3000/invitacion/<token>` (pública;
+  token desconocido → 404)
 - Salud: `http://localhost:3000/health` (200 si PostgreSQL responde; 503
   `degraded` si no, sin filtrar credenciales)
 
@@ -109,7 +111,10 @@ privadas. `/superadmin` añade `requireSuperadmin` (`es_superadmin` y
 `empresa_id` nulo); un usuario de empresa recibe 403 y un anónimo va al login.
 El alta de empresa genera un administrador `INACTIVO` sin contraseña y una
 invitación de 7 días; el enlace se muestra una sola vez desde una cookie flash
-y no se envía por email ni se puede recuperar.
+y no se envía por email ni se puede recuperar. El invitado lo abre en
+`/invitacion/<token>`, define una contraseña de 12 a 128 caracteres y entra en
+`/panel` con sesión de su empresa; la aceptación es atómica y de un solo uso
+(`POST /api/invitaciones/aceptar`). No hay reenvío de invitaciones.
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.

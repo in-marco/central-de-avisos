@@ -132,14 +132,24 @@
     "depends_on": [
       "superadmin-company-plan"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Aceptar una invitación válida y completar el alta de contraseña.",
       "Comprobar que el usuario entra en el contexto de su empresa.",
       "Rechazar una invitación caducada o ya usada."
     ],
-    "evidence": [],
-    "notes": "La caducidad de invitaciones se define en implementación; ver docs/user-and-access-model.md."
+    "evidence": [
+      "Spec: docs/specs/company-admin-onboarding.md. Sin migraciones: se reutilizan invitaciones.aceptada_en y sus CHECK.",
+      "Entorno: Node v26.13.1, npm 11.20.0, Next.js 16.4.6, Prisma 7.10.1, PostgreSQL 18 local (Windows).",
+      "npm run lint, npm run typecheck, npm test (10 archivos, 62 tests) y npm run build: exit 0; el build lista /invitacion/[token] y /api/invitaciones/aceptar como dinámicas.",
+      "init.sh con env -u DATABASE_URL: exit 0 (db:generate + gate), sin arrancar servicios.",
+      "npm run test:db: 6 archivos, 52 tests exit 0; incluye 8 de src/lib/onboarding/invitation-acceptance.db.test.ts: aceptación (ACTIVO, hash scrypt verificable, aceptada_en, una sola sesión con token hasheado, sesión de su empresa y login posterior), un solo uso, caducada, empresa suspendida (sigue pendiente), token desconocido/mal formado y dos aceptaciones concurrentes reales con un solo ganador y una sola sesión.",
+      "Smoke base (scripts/validate-smoke.sh con next start en 3100): todas las rutas OK, incluidas GET /invitacion/<43 caracteres inexistente> 404, GET /api/invitaciones/aceptar 405 y POST con Origin ajeno 403.",
+      "Smoke del flujo completo por HTTP real (29/29 OK): alta de empresa por superadmin 303 y enlace leído del HTML del detalle; GET /invitacion/<token> 200 con empresa y email y cabeceras Referrer-Policy: no-referrer, Cache-Control: no-store y X-Robots-Tag: noindex; contraseña corta -> 303 ?error=corta y confirmación distinta -> ?error=distinta con usuario INACTIVO, hash nulo y aceptada_en nulo; Origin ajeno 403; aceptación válida 303 a /panel con Set-Cookie central_sesion HttpOnly y sin token en la redirección; /panel 200 con el nombre de la empresa y sin Proveedor SaaS; /superadmin 403; reenvío 303 a la invitación, que muestra ya se ha utilizado; BD ACTIVO|hash scrypt|aceptada|1 sesión y token crudo ausente; logout y login con la nueva contraseña 303 a /panel; listado de superadmin con Aceptada; token ausente del log de next start.",
+      "Limpieza: empresa, usuario, invitación y sesiones de prueba borrados; puerto 3100 libre; cookies y logs temporales eliminados. central_de_avisos queda con 1 plan, 2 empresas, 3 usuarios, 1 invitación y 3 sesiones, igual que al empezar.",
+      "Validación independiente (2026-11-14, subagente sin contexto del implementador, skill feature-validator): accept sin hallazgos bloqueantes. Re-ejecutó init.sh sin .env ni DATABASE_URL (exit 0, 62 tests), test:db (52), validate-smoke.sh y un E2E HTTP propio con next start en 3100 (58/60; los 2 fallos eran del script del validador, no de la app): cabeceras no-referrer/no-store/noindex, errores corta/larga/distinta, Origin ajeno 403, GET 405, aceptación 303 a /panel con cookie, revocación de la sesión previa, /superadmin 403, reuso, login posterior, empresa suspendida, invitación caducada (expira_en modificado en su fila de prueba), token desconocido 404, 3 POST concurrentes con un solo ganador y token ausente del log y de la BD. BD restaurada a los mismos recuentos e IDs de sesión."
+    ],
+    "notes": "Invitaciones de 7 días (fijado en superadmin-company-plan); contraseña nueva de 12 a 128 caracteres; sin reenvío de invitaciones. Ver docs/specs/company-admin-onboarding.md."
   },
   {
     "id": "role-based-permissions",

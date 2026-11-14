@@ -134,6 +134,11 @@ expect_status GET /api/auth/login 405
 expect_status GET /api/superadmin/empresas 405
 expect_status GET /api/superadmin/planes 405
 expect_status POST /api/superadmin/empresas 307 -H "Origin: ${BASE_URL}"
+# Invitación: token bien formado pero inexistente, endpoint solo POST y
+# mismo origen. No crea datos.
+expect_status GET "/invitacion/$(printf 'x%.0s' $(seq 1 43))" 404
+expect_status GET /api/invitaciones/aceptar 405
+expect_status POST /api/invitaciones/aceptar 403 -H "Origin: http://evil.example"
 
 if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   [[ -n "${SMOKE_EMAIL:-}" && -n "${SMOKE_PASSWORD:-}" ]] \
@@ -172,6 +177,8 @@ if [[ -n "${SMOKE_NORMAL_EMAIL:-}" || -n "${SMOKE_NORMAL_PASSWORD:-}" ]]; then
   expect_status GET /panel 200 -b "$NORMAL_COOKIE_JAR"
   expect_status GET /superadmin/empresas 403 -b "$NORMAL_COOKIE_JAR"
   expect_status POST /api/superadmin/empresas 403 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  # Revoca la sesión para no dejar sesiones activas de verificación.
+  expect_status POST /api/auth/logout 303 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 fi
 
 echo "Smoke HTTP completado correctamente."

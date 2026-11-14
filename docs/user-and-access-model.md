@@ -77,10 +77,16 @@ Notas:
 - La invitación guarda solo el SHA-256 del token. El enlace local se muestra
   una vez desde una cookie flash de 60 s; no se envía por email y no se puede
   recuperar.
-- Aceptar la invitación, definir contraseña, activar al invitado y entrar en su
-  empresa pertenecen a `company-admin-onboarding`. Los roles combinables,
-  permisos por rol, recuperación de contraseña y revocación masiva siguen
-  fuera de este slice.
+- El invitado abre `/invitacion/<token>`, define una contraseña de 12 a 128
+  caracteres (con confirmación) y entra en `/panel` con una sesión de su
+  empresa. La aceptación marca la invitación, guarda la contraseña, activa al
+  usuario y crea la sesión en una sola transacción; es de un solo uso.
+- Una invitación caducada, ya utilizada o de una empresa `SUSPENDIDA` no
+  activa la cuenta. La de una empresa suspendida sigue pendiente hasta que
+  caduque.
+- Si el navegador tenía otra sesión abierta, se revoca al activar la cuenta.
+- Los roles combinables, permisos por rol, reenvío de invitaciones,
+  recuperación de contraseña y revocación masiva siguen fuera de este slice.
 
 ## Revocation / Expiry
 

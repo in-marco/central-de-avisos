@@ -47,6 +47,13 @@
 - **Contraseñas:** scrypt nativo versionado (`N=131072,r=8,p=1`), salt aleatorio
   y `timingSafeEqual`. Argon2id nativo se descarta por riesgo de binarios en
   Node 26/Windows; el formato versionado permite migrar después.
+- **Política de contraseña nueva:** 12 a 128 caracteres con confirmación, sin
+  reglas de composición (en línea con NIST SP 800-63B). Se aplica al activar
+  una invitación; el login acepta cualquier longitud de 1 a 128 para no
+  bloquear cuentas existentes.
+- **Invitaciones:** `/invitacion/<token>` público con cabeceras `no-referrer`,
+  `no-store` y `noindex`; la aceptación es una transacción de un solo uso que
+  crea la sesión directamente.
 - **Revocación:** logout marca `revocada_en`; usuario `INACTIVO`, empresa
   `SUSPENDIDA` y sesión caducada/revocada no autentican en cada petición.
 - **Rutas:** `requireSession` en layouts/páginas privados; sin middleware como

@@ -28,13 +28,32 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   se crean en una sola transacción. Motivo: un fallo no debe dejar empresa sin
   administrador ni usuario huérfano.
 - **MUST** el usuario invitado se crea `INACTIVO`, sin `password_hash` y sin
-  permisos hasta que `company-admin-onboarding` acepte la invitación. Motivo:
+  permisos hasta que acepte la invitación en `/invitacion/<token>`. Motivo:
   la existencia del registro no debe habilitar login.
 - **MUST** la invitación guarda solo el SHA-256 del token; el token crudo no se
   persiste, no se registra en logs y no viaja en la URL. La única entrega local
   es la cookie flash `central_invitacion` (HttpOnly, SameSite=Strict, 60 s,
   Path `/superadmin/empresas`). Motivo: una fuga de base de datos o de logs no
   debe permitir activar cuentas.
+- **MUST** la búsqueda de invitación por `token_hash` es una excepción de
+  identidad sin `tenantFilter` limitada a `src/lib/onboarding/`; no se listan
+  invitaciones fuera de `src/lib/superadmin/*`. Motivo: el token identifica una
+  sola fila y precede al tenant, como la sesión.
+- **MUST** aceptar una invitación es atómico y de un solo uso: `aceptada_en`,
+  `password_hash`, `estado ACTIVO` y la sesión se escriben en una transacción,
+  con `updateMany` condicionado a `aceptada_en IS NULL` y no caducada. Motivo:
+  un doble envío o una carrera no deben activar dos veces ni crear sesiones
+  extra.
+- **MUST** una invitación de empresa no `ACTIVA` no se acepta y sigue
+  pendiente. Motivo: la sesión resultante no autenticaría y el usuario quedaría
+  activo sin poder entrar.
+- **MUST** las contraseñas nuevas tienen entre 12 y 128 caracteres y se
+  confirman (`validateNewPassword`); el login no aplica esta política. Motivo:
+  no bloquear cuentas existentes al endurecer las altas.
+- **MUST** `/invitacion/*` responde con `Referrer-Policy: no-referrer`,
+  `Cache-Control: no-store` y `X-Robots-Tag: noindex`; el token viaja en el
+  cuerpo del POST y nunca en la redirección final. Motivo: el token está en el
+  path del enlace y no debe filtrarse por Referer, cachés o buscadores.
 - **MUST** el NIF se normaliza a mayúsculas y sin espacios antes de guardarlo;
   el CHECK `empresas_nif_normalizado` y el índice único lo respaldan. Motivo:
   evitar duplicados por variantes de escritura.

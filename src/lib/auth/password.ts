@@ -71,6 +71,35 @@ export function isEmailLengthValid(email: string): boolean {
   return email.length > 0 && email.length <= EMAIL_MAX_LENGTH;
 }
 
+/** Longitud mínima de una contraseña nueva (alta por invitación). */
+export const NEW_PASSWORD_MIN_LENGTH = 12;
+
+export type NewPasswordError = "corta" | "larga" | "distinta";
+
+/**
+ * Política de contraseña nueva: entre 12 y 128 caracteres y confirmación
+ * idéntica. No se exigen clases de caracteres. El login no aplica esta
+ * política para no bloquear cuentas existentes.
+ */
+export function validateNewPassword(
+  password: string,
+  confirmation: string,
+): { ok: true } | { ok: false; error: NewPasswordError } {
+  if (password.length < NEW_PASSWORD_MIN_LENGTH) {
+    return { ok: false, error: "corta" };
+  }
+
+  if (password.length > PASSWORD_MAX_LENGTH) {
+    return { ok: false, error: "larga" };
+  }
+
+  if (password !== confirmation) {
+    return { ok: false, error: "distinta" };
+  }
+
+  return { ok: true };
+}
+
 export async function hashPassword(password: string): Promise<string> {
   if (!isPasswordLengthValid(password)) {
     throw new Error(

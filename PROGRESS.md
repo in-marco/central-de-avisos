@@ -5,11 +5,11 @@
 - Repository root: `D:\desarrollo\CursoAIExpert\central-de-avisos`
 - Standard startup path: `./init.sh` (en Windows, Git Bash: `& "C:\Program Files\Git\bin\bash.exe" init.sh`)
 - Standard verification path: `init.sh` comprueba npm, instala dependencias con `npm ci` si falta `node_modules`, ejecuta `npm run db:generate` y el gate (lint, typecheck, tests unitarios y build); no arranca PostgreSQL, servidores ni servicios de larga duración.
-- Current feature: `superadmin-company-plan` en `accepted`.
-- Current next ready feature: `company-admin-onboarding`.
+- Current feature: `company-admin-onboarding` en `accepted`.
+- Current next ready feature: `role-based-permissions`.
 - Current blocker: none.
-- Last verified at: 2026-11-14 03:35 (superadmin-company-plan aceptada, entorno local Windows)
-- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío ni email real; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
+- Last verified at: 2026-11-14 (company-admin-onboarding aceptada por validación independiente, entorno local Windows)
+- Known risks: rate limiting durable diferido (solo error genérico, hash dummy y scrypt); no hay limpieza programada de sesiones caducadas/revocadas; las credenciales demo viven solo en `.env` local y `.env.example`; RLS diferida (riesgo residual de fuga entre tenants mitigado por `tenantFilter` y tests, no por PostgreSQL); el enlace de invitación es irrecuperable al caducar la cookie flash de 60 s y no hay reenvío, regeneración ni email real (una invitación perdida o caducada no se puede sustituir desde la interfaz); el token de invitación viaja en el path del enlace (mitigado con un solo uso, no-referrer, no-store y noindex); la aceptación de la invitación no deja auditoría; las acciones de superadmin aún no tienen auditoría avanzada; cambiar el importe de un plan no conserva histórico; `npm audit` reporta 7 vulnerabilidades moderadas en `minimatch` dentro de `typescript-eslint` (solo tooling de desarrollo); ESLint 9.39.5 aparece deprecado porque los plugins de `eslint-config-next` aún no declaran soporte de ESLint 10; npm 11.20 avisa de install scripts de Prisma/esbuild no aprobados (no impidió generate, migrate ni seed); `prisma migrate reset` tiene un guard para agentes IA que exige consentimiento explícito.
 
 ## Session Log
 
@@ -167,3 +167,31 @@
 - Files or artifacts updated: `feature_list.json` (`superadmin-company-plan` a `accepted` con evidencia) y `PROGRESS.md`.
 - Known risk or unresolved issue: el enlace de invitación sigue disponible mientras dure la cookie flash de 60 s, aunque la documentación habla de “una sola vez”; sin reenvío, email real ni auditoría de superadmin. RLS, rate limiting y limpieza de sesiones siguen diferidos.
 - Next best step: ejecutar `feature-spec` para `company-admin-onboarding`.
+
+
+### Session 012
+
+- Date: 2026-11-14
+- Goal: especificar e implementar `company-admin-onboarding`.
+- Completed: spec `docs/specs/company-admin-onboarding.md`; política de contraseña nueva `validateNewPassword` (12–128 caracteres y confirmación; el login no cambia); módulo `src/lib/onboarding/invitation-acceptance.ts` (búsqueda por `token_hash`, clasificación VALIDA/NO_ENCONTRADA/ACEPTADA/CADUCADA/EMPRESA_INACTIVA y aceptación transaccional de un solo uso con `updateMany` condicionado, activación y sesión); página pública `/invitacion/[token]` con `not-found.tsx` propio; `POST /api/invitaciones/aceptar` (same-origin, 405, revoca la sesión previa del navegador, 303 a `/panel` con `central_sesion`); cabeceras `no-referrer`/`no-store`/`noindex` en `/invitacion/:path*`; `validate-smoke.sh` con comprobaciones de invitación y logout del usuario de empresa. Sin migraciones.
+- Verification run: lint, typecheck, `npm test` (62), build e `init.sh` sin `DATABASE_URL` exit 0; `test:db` (52, incluida la concurrencia real); `validate-smoke.sh` con superadmin y usuario de empresa; smoke HTTP del flujo completo (29/29) con `next start` en 3100.
+- Evidence captured: ver `feature_list.json` (`company-admin-onboarding`).
+- Files or artifacts updated: `src/lib/auth/password.ts`, `password.test.ts`, `src/lib/onboarding/*`, `src/app/invitacion/[token]/*`, `src/app/api/invitaciones/aceptar/route.ts`, `next.config.ts`, `scripts/validate-smoke.sh`, `AGENTS.md`, `ARCHITECTURE.md`, `CONSTRAINTS.md`, `README.md`, `docs/domain-model.md`, `docs/user-and-access-model.md`, `docs/risks-and-open-questions.md`, `docs/technical-discovery.md`, `docs/specs/company-admin-onboarding.md`, `feature_list.json`, `PROGRESS.md`.
+- Known risk or unresolved issue: sin reenvío ni regeneración de invitaciones; token en el path del enlace (mitigado); aceptación sin auditoría. La base `central_de_avisos` contiene datos que no son del seed y son anteriores a esta sesión (empresa `12345678X` con un invitado pendiente); se dejaron intactos. La base `central_de_avisos_company_admin_onboarding`, creada antes de esta sesión, se eliminó a petición del usuario.
+- Next best step: validación independiente de `company-admin-onboarding`; si se acepta, ejecutar `feature-spec` para `role-based-permissions`.
+
+### Session 013
+
+- Date: 2026-11-14
+- Goal: validación independiente de `company-admin-onboarding`.
+- Result: `accept`; sin hallazgos críticos, altos ni medios.
+- Verification run: subagente validador sin contexto del implementador. Ejecutó `init.sh` sin `.env` ni `DATABASE_URL` (exit 0, 62 tests), `test:db` (52), `validate-smoke.sh` y un E2E HTTP propio (58/60; los 2 fallos eran de su script). Cubrió caducada, empresa suspendida, concurrencia, reuso y cabeceras.
+- Evidence captured: `feature_list.json` (`company-admin-onboarding` en `accepted` con evidencia del validador); BD restaurada a los mismos recuentos e IDs de sesión.
+- Files or artifacts updated: `feature_list.json` (estado y nota), `PROGRESS.md`.
+- Known risk or unresolved issue (observaciones no bloqueantes del validador):
+  - Las fechas escritas por la app aparecen en psql una hora por detrás (posible tratamiento de zona horaria en `@prisma/adapter-pg`). Es coherente dentro de la app, pero las comparaciones con `now()` de SQL salen desfasadas. Investigar aparte.
+  - `test:db` corre contra `central_de_avisos` y no contra una base separada como dice `AGENTS.md`.
+  - `validate-smoke.sh` deja 2 sesiones revocadas por ejecución.
+  - `isSameOrigin` acepta peticiones sin `Origin` (diseño previo).
+  - Las páginas de invitación rechazada responden 200.
+- Next best step: commits de la spec y de la feature; después, `feature-spec` para `role-based-permissions`.

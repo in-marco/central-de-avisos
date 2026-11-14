@@ -123,8 +123,20 @@ anónimo va al login.
 - Tras el alta, el detalle muestra una sola vez el enlace
   `/invitacion/<token>` desde una cookie flash de 60 s. No se envía email real,
   no se guarda el token crudo y el enlace no se puede recuperar.
-- Aceptar la invitación, definir contraseña, roles y facturación mensual quedan
-  fuera de este slice.
+- Roles y facturación mensual quedan fuera de este slice.
+
+## Activación del administrador invitado
+
+El administrador abre el enlace `/invitacion/<token>` que muestra el detalle de
+la empresa, ve su empresa y su email, y elige una contraseña de 12 a 128
+caracteres. Al activar la cuenta entra directamente en `/panel` con una sesión
+de su empresa; después usa `/login` con normalidad.
+
+- El enlace es de un solo uso. Si ya se usó, caducó (7 días) o la empresa está
+  suspendida, la página lo indica y no activa la cuenta.
+- Un enlace desconocido responde 404 sin revelar datos.
+- No hay reenvío ni regeneración de invitaciones: si el enlace se pierde o
+  caduca, hoy no se puede emitir otro desde la interfaz.
 
 ## Desarrollo
 
@@ -138,6 +150,8 @@ npm run dev
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
+- Activación de invitado: `http://localhost:3000/invitacion/<token>` (enlace
+  mostrado tras el alta de empresa)
 - Salud: <http://localhost:3000/health>
 
 `GET /health` comprueba PostgreSQL con un timeout de 2 s:

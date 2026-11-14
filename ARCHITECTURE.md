@@ -119,9 +119,32 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   `SameSite=Strict`, `Path=/superadmin/empresas`, `Max-Age=60`) y el detalle lo
   muestra una sola vez como `/invitacion/<token>`. No se envía email real, no
   se guarda en URL ni logs y no hay reenvío ni recuperación.
-- La aceptación de la invitación, el alta de contraseña y el login del invitado
-  pertenecen a `company-admin-onboarding`. Roles, auditoría y facturación
-  mensual siguen fuera de este slice.
+- Roles, auditoría y facturación mensual siguen fuera de este slice.
+
+## Activación del administrador invitado
+
+- `/invitacion/[token]` es pública y `force-dynamic`. Valida el formato del
+  token (base64url de 43 caracteres) antes de consultar y busca la invitación
+  por `token_hash` en `src/lib/onboarding/invitation-acceptance.ts`. Es una
+  excepción de identidad acotada, como la búsqueda de sesión: no lleva
+  `tenantFilter` porque el token identifica una única fila.
+- Estados de la página: válida (formulario con empresa, nombre y email en solo
+  lectura), ya utilizada, caducada, empresa no activa y no válida (404 con
+  `not-found.tsx` propio, sin datos).
+- `POST /api/invitaciones/aceptar` comprueba mismo origen, valida la política
+  de contraseña nueva (12–128 caracteres y confirmación) y calcula scrypt
+  fuera de la transacción. Dentro de una única transacción:
+  `updateMany` condicionado de `aceptada_en` (un solo ganador con envíos
+  concurrentes), activación del usuario (`ACTIVO` + `password_hash`) y
+  creación de la sesión. Responde 303 a `/panel` con `central_sesion` y revoca
+  la sesión previa del navegador si existía.
+- Una invitación ya usada, caducada, desconocida o de una empresa
+  `SUSPENDIDA` no activa al usuario ni crea sesión; la invitación de una
+  empresa suspendida sigue pendiente.
+- `next.config.ts` añade a `/invitacion/:path*` `Referrer-Policy:
+  no-referrer`, `Cache-Control: no-store` y `X-Robots-Tag: noindex, nofollow`,
+  porque el token viaja en el path del enlace. El token va en el cuerpo del
+  POST y nunca en la redirección final.
 
 ## Autenticación y sesiones
 

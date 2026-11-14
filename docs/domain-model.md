@@ -154,8 +154,11 @@ Pendiente ──aceptar──> Aceptada
 
 - **Pendiente:** no aceptada y dentro del plazo de 7 días.
 - **Caducada:** no aceptada y con `expira_en <= ahora`.
-- **Aceptada:** tiene `aceptada_en`; el alta de contraseña y la activación del
-  usuario se completan en el onboarding.
+- **Aceptada:** tiene `aceptada_en`. La transición ocurre en la misma
+  operación que guarda la contraseña, activa al usuario y crea su sesión; no
+  existe una invitación aceptada con el usuario aún `INACTIVO`.
+- Una invitación de una empresa `SUSPENDIDA` no se puede aceptar y sigue
+  pendiente.
 
 ## Important Scenarios
 
