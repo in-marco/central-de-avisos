@@ -24,21 +24,38 @@ cd "<worktree>" && \
 PATH="/c/Program Files/nodejs:/c/Program Files/PostgreSQL/18/bin:/c/Program Files (x86)/Microsoft/Edge/Application:$PATH" \
 claude -p "<prompt>" \
   --permission-mode acceptEdits \
+  --add-dir "<tmp-dir>" \
+  --add-dir "C:/Program Files (x86)/Microsoft/Edge/Application" \
+  --add-dir "C:/Program Files/PostgreSQL/18/bin" \
   --allowedTools \
     "Read" "Glob" "Grep" "Edit" "Write" "Skill" "Agent" \
-    "Bash(npm *)" "Bash(npx *)" "Bash(node *)" "Bash(bash *)" \
+    "Bash(npm *)" "Bash(npx *)" "Bash(node *)" "Bash(bash *)" "Bash(env *)" \
     "Bash(git status *)" "Bash(git diff *)" "Bash(git log *)" \
     "Bash(git add *)" "Bash(git commit *)" "Bash(git show *)" \
     "Bash(curl *)" "Bash(taskkill *)" "Bash(netstat *)" "Bash(tasklist *)" \
     "Bash(ls *)" "Bash(cat *)" "Bash(grep *)" "Bash(sed *)" "Bash(head *)" \
     "Bash(tail *)" "Bash(wc *)" "Bash(find *)" "Bash(rm *)" "Bash(mkdir *)" \
     "Bash(export *)" "Bash(cp *)" "Bash(sleep *)" "Bash(pwd)" \
-    "Bash(psql *)" "Bash(msedge *)"
+    "Bash(psql *)" "Bash(createdb *)" "Bash(dropdb *)" \
+    "Bash(msedge *)" "Bash(msedge.exe *)"
 ```
 
-- `psql` y `msedge` se permiten por nombre y se ponen en el `PATH` de la
-  sesión. No uses rutas completas en `--allowedTools`: el paréntesis de
-  `Program Files (x86)` rompe el análisis de la regla y Claude Code la ignora.
+- `<tmp-dir>` es un directorio temporal propio de la feature, fuera del
+  worktree: `<worktrees-root>/.tmp-<feature-id>`. La sesión principal lo crea
+  antes de lanzar la sesión y lo borra al terminar. Indica en el prompt que los
+  temporales (cookies, logs, perfil de Edge, scripts de prueba) van ahí.
+- Sin `--add-dir`, la sesión sin interfaz pide aprobación para cualquier ruta
+  fuera del worktree (Edge, psql, temporales) y la deniega. Comprobado en
+  `role-based-permissions`: la validación con navegador, el smoke y la base
+  temporal quedaron bloqueados por eso.
+- `psql`, `createdb`, `dropdb` y `msedge` se permiten por nombre y se ponen en el
+  `PATH` de la sesión. No uses rutas completas en `--allowedTools`: el
+  paréntesis de `Program Files (x86)` rompe el análisis de la regla y Claude
+  Code la ignora.
+- Las variables de entorno de un comando van con `env` delante (por ejemplo
+  `env SMOKE_EMAIL=... bash scripts/validate-smoke.sh` o
+  `env -u DATABASE_URL bash init.sh`). La forma `VAR=x comando` no encaja con
+  ninguna regla y se deniega. Indícalo en el prompt.
 
 - El prompt de la sesión es el mismo de la skill: `Use feature-flow for
   <feature-id> only, until accepted.`
@@ -58,7 +75,10 @@ ignorado por git y no llega a los worktrees. Antes de lanzar cada sesión:
    nombre de la base a `central_de_avisos_<feature_id_con_guiones_bajos>`.
 2. Crea esa base (`createdb` o `CREATE DATABASE` con psql) y deja que la sesión
    aplique las migraciones (`npm run db:deploy`; `test:db` también las aplica).
-3. Al terminar la feature (`accept` o `block`), borra la base y el `.env` del
+3. Crea el directorio temporal `<worktrees-root>/.tmp-<feature-id>` que se pasa
+   con `--add-dir`.
+4. Al terminar la feature (`accept` o `block`), borra la base, el directorio
+   temporal y el `.env` del
    worktree, salvo que el usuario pida conservarlos.
 
 No dupliques aquí reglas del flujo: cualquier cambio se hace en
