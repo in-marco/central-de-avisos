@@ -49,6 +49,13 @@ Antes de escribir código:
   opencode usa `.opencode/agents/`.
 - Cualquier cambio de reglas se hace en `.agents/skills/`, no en los
   envoltorios.
+- Excepción: las skills de Neon (`.claude/skills/neon` y
+  `.claude/skills/neon-postgres`) se instalan con la CLI de Neon (`npx
+  neonctl skills`) y se actualizan con `neon skills update`; su versión queda
+  fijada en `skills-lock.json`. No se editan a mano.
+- `.mcp.json` declara el servidor MCP de Neon, limitado al proyecto de la demo
+  y con OAuth: no contiene claves. Las cadenas de conexión de la demo viven solo
+  en `.env.demo`, ignorado por git; `.env` sigue apuntando al PostgreSQL local.
 
 ## Required Artifacts
 
