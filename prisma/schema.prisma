@@ -145,12 +145,14 @@ model Usuario {
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  empresa       Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  cliente       Cliente?     @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
-  contacto      Contacto?    @relation(fields: [contactoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sesiones      Sesion[]
-  invitaciones  Invitacion[]
-  avisosCreados Aviso[]
+  empresa          Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente          Cliente?     @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  contacto         Contacto?    @relation(fields: [contactoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sesiones         Sesion[]
+  invitaciones     Invitacion[]
+  avisosCreados    Aviso[]      @relation("AvisoCreadoPor")
+  avisosValidados  Aviso[]      @relation("AvisoValidadoPor")
+  avisosCancelados Aviso[]      @relation("AvisoCanceladoPor")
 
   @@index([empresaId])
   @@index([clienteId])
@@ -278,26 +280,39 @@ model Contacto {
 // avisos_descripcion_no_vacia vive en SQL. `origen` y `estado` los fija el
 // servidor; el alta de oficina escribe OFICINA y NUEVO.
 model Aviso {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  empresaId     String         @map("empresa_id") @db.Uuid
-  clienteId     String         @map("cliente_id") @db.Uuid
-  sedeId        String         @map("sede_id") @db.Uuid
-  contactoId    String         @map("contacto_id") @db.Uuid
-  descripcion   String
-  prioridad     PrioridadAviso @default(NORMAL)
-  origen        OrigenAviso
-  estado        EstadoAviso    @default(NUEVO)
-  creadoPorId   String         @map("creado_por_id") @db.Uuid
-  creadoEn      DateTime       @default(now()) @map("creado_en") @db.Timestamptz(3)
-  actualizadoEn DateTime       @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId         String         @map("empresa_id") @db.Uuid
+  clienteId         String         @map("cliente_id") @db.Uuid
+  sedeId            String         @map("sede_id") @db.Uuid
+  contactoId        String         @map("contacto_id") @db.Uuid
+  descripcion       String
+  prioridad         PrioridadAviso @default(NORMAL)
+  origen            OrigenAviso
+  estado            EstadoAviso    @default(NUEVO)
+  creadoPorId       String         @map("creado_por_id") @db.Uuid
+  creadoEn          DateTime       @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn     DateTime       @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+  // Validación y cancelación (aviso-validation-pool). Las fija el servidor en
+  // src/lib/avisos/avisos.ts con updateMany condicionado al estado de origen.
+  // Su coherencia con `estado` la garantizan los CHECK
+  // avisos_validacion_coherente, avisos_cancelacion_coherente y
+  // avisos_motivo_cancelacion_no_vacio (migración SQL).
+  validadoEn        DateTime?      @map("validado_en") @db.Timestamptz(3)
+  validadoPorId     String?        @map("validado_por_id") @db.Uuid
+  canceladoEn       DateTime?      @map("cancelado_en") @db.Timestamptz(3)
+  canceladoPorId    String?        @map("cancelado_por_id") @db.Uuid
+  motivoCancelacion String?        @map("motivo_cancelacion")
 
-  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  cliente   Cliente  @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
-  sede      Sede     @relation(fields: [sedeId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
-  contacto  Contacto @relation(fields: [contactoId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
-  creadoPor Usuario  @relation(fields: [creadoPorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  empresa      Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente      Cliente  @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  sede         Sede     @relation(fields: [sedeId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
+  contacto     Contacto @relation(fields: [contactoId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
+  creadoPor    Usuario  @relation("AvisoCreadoPor", fields: [creadoPorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  validadoPor  Usuario? @relation("AvisoValidadoPor", fields: [validadoPorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  canceladoPor Usuario? @relation("AvisoCanceladoPor", fields: [canceladoPorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([empresaId, creadoEn])
+  @@index([empresaId, estado])
   @@index([clienteId])
   @@index([sedeId])
   @@index([contactoId])

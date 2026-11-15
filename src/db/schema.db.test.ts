@@ -1317,8 +1317,26 @@ describe("avisos", () => {
       "creado_por_id",
       "creado_en",
       "actualizado_en",
+      // aviso-validation-pool: nullables, coherencia por CHECK.
+      "cancelado_en",
+      "cancelado_por_id",
+      "motivo_cancelacion",
+      "validado_en",
+      "validado_por_id",
     ]);
-    expect(columnas.every((c) => c.is_nullable === "NO")).toBe(true);
+    const nuevas = new Set([
+      "cancelado_en",
+      "cancelado_por_id",
+      "motivo_cancelacion",
+      "validado_en",
+      "validado_por_id",
+    ]);
+    expect(
+      columnas.every((c) => (nuevas.has(c.column_name) ? c.is_nullable === "YES" : c.is_nullable === "NO")),
+    ).toBe(true);
+    expect(columnas.filter((c) => nuevas.has(c.column_name)).every((c) => c.column_default === null)).toBe(
+      true,
+    );
     const defaults = Object.fromEntries(columnas.map((c) => [c.column_name, c.column_default]));
     expect(defaults.prioridad).toContain("NORMAL");
     expect(defaults.estado).toContain("NUEVO");
@@ -1331,7 +1349,12 @@ describe("avisos", () => {
       WHERE conrelid = 'avisos'::regclass AND contype = 'c'
       ORDER BY conname
     `;
-    expect(checks.map((row) => row.conname)).toEqual(["avisos_descripcion_no_vacia"]);
+    expect(checks.map((row) => row.conname)).toEqual([
+      "avisos_cancelacion_coherente",
+      "avisos_descripcion_no_vacia",
+      "avisos_motivo_cancelacion_no_vacio",
+      "avisos_validacion_coherente",
+    ]);
 
     const fks = await getDb().$queryRaw<
       Array<{ conname: string; confdeltype: string; columnas: number; destino: string }>
@@ -1343,11 +1366,13 @@ describe("avisos", () => {
       ORDER BY conname
     `;
     expect(fks).toEqual([
+      { conname: "avisos_cancelado_por_id_fkey", confdeltype: "r", columnas: 1, destino: "usuarios" },
       { conname: "avisos_cliente_id_empresa_id_fkey", confdeltype: "r", columnas: 2, destino: "clientes" },
       { conname: "avisos_contacto_id_cliente_id_fkey", confdeltype: "r", columnas: 2, destino: "contactos" },
       { conname: "avisos_creado_por_id_fkey", confdeltype: "r", columnas: 1, destino: "usuarios" },
       { conname: "avisos_empresa_id_fkey", confdeltype: "r", columnas: 1, destino: "empresas" },
       { conname: "avisos_sede_id_cliente_id_fkey", confdeltype: "r", columnas: 2, destino: "sedes" },
+      { conname: "avisos_validado_por_id_fkey", confdeltype: "r", columnas: 1, destino: "usuarios" },
     ]);
 
     const indexes = await getDb().$queryRaw<Array<{ indexname: string }>>`
@@ -1359,6 +1384,7 @@ describe("avisos", () => {
       "avisos_cliente_id_idx",
       "avisos_contacto_id_idx",
       "avisos_empresa_id_creado_en_idx",
+      "avisos_empresa_id_estado_idx",
       "avisos_pkey",
       "avisos_sede_id_idx",
     ]);
@@ -1440,6 +1466,110 @@ describe("avisos", () => {
         }),
       ).rejects.toThrow();
     }
+  });
+
+  /*
+   * aviso-validation-pool: coherencia de validación y cancelación con el
+   * estado. Cada caso aplica un UPDATE en SQL directo sobre un aviso NUEVO
+   * recién insertado. `:u` es el usuario de la empresa A.
+   */
+  const VALIDO = "validado_en = now(), validado_por_id = :u";
+  const CANCELADO = "cancelado_en = now(), cancelado_por_id = :u, motivo_cancelacion = 'Duplicado'";
+
+  async function aplicar(set: string) {
+    const suffix = uniqueSuffix();
+    return inRollback(async (tx) => {
+      const e = await escenario(tx, suffix);
+      await insertar(tx, e.fila, e.usuario.id);
+      await tx.$executeRawUnsafe(
+        // `$2` aparece siempre en el WHERE para que PostgreSQL conozca su tipo.
+        `UPDATE avisos SET ${set.replaceAll(":u", "$2::uuid")} WHERE empresa_id = $1::uuid AND $2::uuid IS NOT NULL`,
+        e.a.id,
+        e.usuario.id,
+      );
+      const rows = await tx.$queryRaw<Array<{ estado: string }>>`
+        SELECT estado::text AS estado FROM avisos WHERE empresa_id = ${e.a.id}::uuid
+      `;
+      return rows.map((row) => row.estado);
+    });
+  }
+
+  it.each([
+    ["NUEVO → PENDIENTE con validación", `estado = 'PENDIENTE', ${VALIDO}`, "PENDIENTE"],
+    ["NUEVO → CANCELADO con cancelación", `estado = 'CANCELADO', ${CANCELADO}`, "CANCELADO"],
+    [
+      "CANCELADO conservando la validación",
+      `estado = 'CANCELADO', ${VALIDO}, ${CANCELADO}`,
+      "CANCELADO",
+    ],
+    ["ASIGNADO con validación", `estado = 'ASIGNADO', ${VALIDO}`, "ASIGNADO"],
+  ])("acepta %s", async (_label, set, esperado) => {
+    await expect(aplicar(set)).resolves.toEqual([esperado]);
+  });
+
+  it.each([
+    ["CANCELADO sin datos de cancelación", "estado = 'CANCELADO'", "avisos_cancelacion_coherente"],
+    [
+      "CANCELADO sin motivo",
+      "estado = 'CANCELADO', cancelado_en = now(), cancelado_por_id = :u",
+      "avisos_cancelacion_coherente",
+    ],
+    [
+      "CANCELADO sin fecha",
+      "estado = 'CANCELADO', cancelado_por_id = :u, motivo_cancelacion = 'x'",
+      "avisos_cancelacion_coherente",
+    ],
+    [
+      "CANCELADO sin autor",
+      "estado = 'CANCELADO', cancelado_en = now(), motivo_cancelacion = 'x'",
+      "avisos_cancelacion_coherente",
+    ],
+    ["datos de cancelación con estado NUEVO", CANCELADO, "avisos_cancelacion_coherente"],
+    [
+      "datos de cancelación con estado PENDIENTE",
+      `estado = 'PENDIENTE', ${VALIDO}, ${CANCELADO}`,
+      "avisos_cancelacion_coherente",
+    ],
+    [
+      "motivo vacío",
+      "estado = 'CANCELADO', cancelado_en = now(), cancelado_por_id = :u, motivo_cancelacion = ''",
+      "avisos_motivo_cancelacion_no_vacio",
+    ],
+    [
+      "motivo de solo espacios",
+      "estado = 'CANCELADO', cancelado_en = now(), cancelado_por_id = :u, motivo_cancelacion = '   '",
+      "avisos_motivo_cancelacion_no_vacio",
+    ],
+    ["PENDIENTE sin validación", "estado = 'PENDIENTE'", "avisos_validacion_coherente"],
+    ["ASIGNADO sin validación", "estado = 'ASIGNADO'", "avisos_validacion_coherente"],
+    ["EN_CURSO sin validación", "estado = 'EN_CURSO'", "avisos_validacion_coherente"],
+    ["RESUELTO sin validación", "estado = 'RESUELTO'", "avisos_validacion_coherente"],
+    ["FACTURADO sin validación", "estado = 'FACTURADO'", "avisos_validacion_coherente"],
+    ["NUEVO con datos de validación", VALIDO, "avisos_validacion_coherente"],
+    [
+      "fecha de validación sin autor",
+      "estado = 'PENDIENTE', validado_en = now()",
+      "avisos_validacion_coherente",
+    ],
+    [
+      "autor de validación sin fecha",
+      "estado = 'PENDIENTE', validado_por_id = :u",
+      "avisos_validacion_coherente",
+    ],
+  ])("rechaza %s", async (_label, set, constraint) => {
+    await expect(aplicar(set)).rejects.toThrow(new RegExp(constraint));
+  });
+
+  it("exige que validado_por_id y cancelado_por_id existan en usuarios (FK)", async () => {
+    const inexistente = "00000000-0000-4000-8000-000000000000";
+    await expect(
+      aplicar(`estado = 'PENDIENTE', validado_en = now(), validado_por_id = '${inexistente}'`),
+    ).rejects.toThrow(/avisos_validado_por_id_fkey/);
+    await expect(
+      aplicar(
+        `estado = 'CANCELADO', cancelado_en = now(), cancelado_por_id = '${inexistente}', motivo_cancelacion = 'x'`,
+      ),
+    ).rejects.toThrow(/avisos_cancelado_por_id_fkey/);
   });
 });
 

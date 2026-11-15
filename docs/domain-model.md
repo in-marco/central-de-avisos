@@ -85,10 +85,16 @@
   `ASIGNADO`, `EN_CURSO`, `RESUELTO`, `FACTURADO`, `CANCELADO`; nace `NUEVO`),
   `creado_por_id` (usuario que lo registró) y fechas. FK compuestos impiden
   mezclar empresa, cliente, sede y contacto; el contacto es de todo el cliente
-  o de la sede del aviso. Hoy solo existe el alta desde oficina (`OFICINA`,
-  `NUEVO`); las transiciones, el técnico asignado y el alta desde el portal
-  llegan con sus features. No hay número correlativo de aviso: se identifica
-  por cliente, sede y fecha.
+  o de la sede del aviso. El alta es desde oficina (`OFICINA`, `NUEVO`); el
+  técnico asignado y el alta desde el portal llegan con sus features. No hay
+  número correlativo de aviso: se identifica por cliente, sede y fecha.
+- Implementado (`aviso-validation-pool`): `validado_en` y `validado_por_id`
+  (quién lo validó y cuándo), `cancelado_en`, `cancelado_por_id` y
+  `motivo_cancelacion` (1-500 caracteres en la aplicación, no vacío en BD).
+  CHECK de coherencia: un `NUEVO` no tiene validación; todo estado posterior
+  salvo `CANCELADO` la exige; los datos de cancelación existen si y solo si el
+  aviso está `CANCELADO` (uno cancelado desde `PENDIENTE` conserva su
+  validación).
 
 ### Parte
 - Aviso al que pertenece (siempre uno en el MVP).
@@ -161,6 +167,17 @@ Nuevo ──validar──> Pendiente ──asignar──> Asignado ──iniciar
 - **Resuelto:** todos los partes están aprobados y el aviso puede facturarse.
 - **Facturado:** tiene factura emitida.
 - **Cancelado:** no se ejecutará; requiere motivo.
+- Implementado (`aviso-validation-pool`): `Nuevo → Pendiente` (validar) y
+  `Nuevo | Pendiente → Cancelado` (cancelar con motivo), hechas por
+  administrador u oficina desde el detalle del aviso. La bolsa es la lista de
+  avisos `Pendiente` de la empresa, por prioridad (Urgente, Alta, Normal) y
+  antigüedad. La validación en el mismo acto del alta, la cancelación de
+  avisos `Asignado` o `En curso` y reabrir cancelados no están implementadas.
+- **Aviso incompleto** (definición operativa): no se puede validar mientras
+  tenga algún problema de `problemasParaValidar`. Hoy solo uno: el contacto ya
+  no es de todo el cliente ni de la sede del aviso (se vinculó después a otra
+  sede desde la ficha del cliente). El resto de campos son obligatorios en BD;
+  la lista se ampliará con `client-aviso-creation` si hace falta.
 
 ### Parte
 

@@ -74,18 +74,70 @@ export function PrioridadChip({ prioridad }: { prioridad: Prioridad }) {
   );
 }
 
+/*
+ * Estado: Nuevo (azul, círculo con punto: por revisar), Pendiente (success,
+ * check: validado y en la bolsa), Cancelado (neutro, aspa) y el resto con un
+ * punto lleno hasta que sus features definan su estilo. Texto siempre visible
+ * y AA sobre el fondo del chip: primary, success y muted superan 4.5:1.
+ */
+const ESTADO_CLASSES: Partial<Record<Estado, string>> = {
+  NUEVO: "border-secondary/40 bg-secondary/10 text-primary",
+  PENDIENTE: "border-success/40 bg-success/10 text-success",
+  CANCELADO: "border-border bg-background text-muted",
+};
+
+const ESTADO_CLASS_DEFAULT = "border-secondary/40 bg-secondary/10 text-primary";
+
+function EstadoIcon({ estado }: { estado: Estado }) {
+  const common: SVGProps<SVGSVGElement> = {
+    "aria-hidden": true,
+    className: "h-3.5 w-3.5 shrink-0",
+    fill: "none",
+    focusable: false,
+    stroke: "currentColor",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    strokeWidth: 2,
+    viewBox: "0 0 16 16",
+  };
+
+  if (estado === "NUEVO") {
+    return (
+      <svg {...common}>
+        <circle cx="8" cy="8" r="6" />
+        <circle cx="8" cy="8" fill="currentColor" r="1.75" stroke="none" />
+      </svg>
+    );
+  }
+
+  if (estado === "PENDIENTE") {
+    return (
+      <svg {...common}>
+        <path d="M3 8.5 6.5 12 13 4.5" />
+      </svg>
+    );
+  }
+
+  if (estado === "CANCELADO") {
+    return (
+      <svg {...common}>
+        <circle cx="8" cy="8" r="6" />
+        <path d="m5.75 5.75 4.5 4.5M10.25 5.75l-4.5 4.5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...common} fill="currentColor" stroke="none">
+      <circle cx="8" cy="8" r="3.5" />
+    </svg>
+  );
+}
+
 export function EstadoChip({ estado }: { estado: Estado }) {
   return (
-    <span className={`${chipBase} border-secondary/40 bg-secondary/10 text-primary`}>
-      <svg
-        aria-hidden
-        className="h-3.5 w-3.5 shrink-0"
-        fill="currentColor"
-        focusable={false}
-        viewBox="0 0 16 16"
-      >
-        <circle cx="8" cy="8" r="3.5" />
-      </svg>
+    <span className={`${chipBase} ${ESTADO_CLASSES[estado] ?? ESTADO_CLASS_DEFAULT}`}>
+      <EstadoIcon estado={estado} />
       <span>
         <span className="sr-only">Estado: </span>
         {ESTADO_LABELS[estado]}

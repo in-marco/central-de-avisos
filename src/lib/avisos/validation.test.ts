@@ -3,11 +3,23 @@ import {
   DESCRIPCION_MAX_LENGTH,
   ESTADO_LABELS,
   ESTADOS,
+  ESTADOS_CANCELABLES,
+  isEstadoCancelable,
+  MOTIVO_CANCELACION_MAX_LENGTH,
   normalizeDescripcion,
+  normalizeMotivo,
+  parseAvisoIdForm,
+  parseCancelacionFields,
+  parseCancelacionForm,
   parseNuevoAvisoFields,
   parseNuevoAvisoForm,
+  parseVista,
   PRIORIDAD_LABELS,
   PRIORIDADES,
+  PROBLEMA_VALIDACION_LABELS,
+  problemasParaValidar,
+  VISTA_LABELS,
+  VISTAS,
   type NuevoAvisoInput,
 } from "./validation";
 
@@ -143,4 +155,142 @@ describe("etiquetas", () => {
     expect(ESTADOS.every((estado) => ESTADO_LABELS[estado].length > 0)).toBe(true);
     expect(ESTADO_LABELS.NUEVO).toBe("Nuevo");
   });
+});
+
+const AVISO = "44444444-4444-4444-8444-444444444444";
+
+function form(entries: Record<string, string>): FormData {
+  const data = new FormData();
+  for (const [key, value] of Object.entries(entries)) {
+    data.set(key, value);
+  }
+  return data;
+}
+
+describe("parseAvisoIdForm", () => {
+  it("normaliza un UUID válido", () => {
+    expect(parseAvisoIdForm(form({ avisoId: ` ${AVISO.toUpperCase()} ` }))).toEqual({
+      ok: true,
+      value: { avisoId: AVISO },
+    });
+  });
+
+  it.each(["", "x", "123", "__proto__"])("rechaza %j como no-encontrado", (avisoId) => {
+    expect(parseAvisoIdForm(form({ avisoId }))).toEqual({ ok: false, error: "no-encontrado" });
+  });
+
+  it("rechaza la ausencia del campo e ignora estado/empresa/usuario del formulario", () => {
+    expect(parseAvisoIdForm(form({ estado: "PENDIENTE" }))).toEqual({
+      ok: false,
+      error: "no-encontrado",
+    });
+    expect(
+      parseAvisoIdForm(
+        form({ avisoId: AVISO, estado: "CANCELADO", empresaId: CLIENTE, validadoPorId: SEDE }),
+      ),
+    ).toEqual({ ok: true, value: { avisoId: AVISO } });
+  });
+});
+
+describe("parseCancelacionFields", () => {
+  const base = { avisoId: AVISO, motivo: "El cliente lo ha resuelto.", confirmar: "si" };
+
+  it("acepta un motivo recortado con la confirmación", () => {
+    expect(parseCancelacionFields({ ...base, motivo: "  Duplicado  " })).toEqual({
+      ok: true,
+      value: { avisoId: AVISO, motivo: "Duplicado" },
+    });
+  });
+
+  it("normaliza CRLF y CR a LF y conserva los saltos y los acentos", () => {
+    expect(normalizeMotivo("Línea uno\r\nLínea dos\rtres")).toBe("Línea uno\nLínea dos\ntres");
+  });
+
+  it.each([
+    ["vacío", ""],
+    ["solo espacios", "   \n\t "],
+    ["de 501 caracteres", "x".repeat(MOTIVO_CANCELACION_MAX_LENGTH + 1)],
+  ])("rechaza el motivo %s", (_nombre, motivo) => {
+    expect(parseCancelacionFields({ ...base, motivo })).toEqual({ ok: false, error: "motivo" });
+  });
+
+  it("acepta exactamente 500 caracteres", () => {
+    const motivo = "x".repeat(MOTIVO_CANCELACION_MAX_LENGTH);
+    expect(parseCancelacionFields({ ...base, motivo })).toEqual({
+      ok: true,
+      value: { avisoId: AVISO, motivo },
+    });
+  });
+
+  it.each(["", "on", "true", "SI", "no"])("exige confirmar=si (recibido %j)", (confirmar) => {
+    expect(parseCancelacionFields({ ...base, confirmar })).toEqual({
+      ok: false,
+      error: "confirmacion",
+    });
+  });
+
+  it("comprueba el aviso antes que el motivo y el motivo antes que la confirmación", () => {
+    expect(parseCancelacionFields({ avisoId: "x", motivo: "", confirmar: "" })).toEqual({
+      ok: false,
+      error: "no-encontrado",
+    });
+    expect(parseCancelacionFields({ ...base, motivo: "", confirmar: "" })).toEqual({
+      ok: false,
+      error: "motivo",
+    });
+  });
+
+  it("lee el formulario e ignora campos de servidor", () => {
+    expect(
+      parseCancelacionForm(
+        form({
+          avisoId: AVISO,
+          motivo: "Duplicado",
+          confirmar: "si",
+          estado: "NUEVO",
+          canceladoPorId: SEDE,
+          empresaId: CLIENTE,
+        }),
+      ),
+    ).toEqual({ ok: true, value: { avisoId: AVISO, motivo: "Duplicado" } });
+    expect(parseCancelacionForm(form({ avisoId: AVISO, motivo: "Duplicado" }))).toEqual({
+      ok: false,
+      error: "confirmacion",
+    });
+  });
+});
+
+describe("problemasParaValidar", () => {
+  it("no encuentra problemas con un contacto de todo el cliente o de la sede del aviso", () => {
+    expect(problemasParaValidar({ sedeId: SEDE, contacto: { sedeId: null } })).toEqual([]);
+    expect(problemasParaValidar({ sedeId: SEDE, contacto: { sedeId: SEDE } })).toEqual([]);
+  });
+
+  it("detecta un contacto vinculado a otra sede", () => {
+    expect(problemasParaValidar({ sedeId: SEDE, contacto: { sedeId: CONTACTO } })).toEqual([
+      "contacto-sede",
+    ]);
+    expect(PROBLEMA_VALIDACION_LABELS["contacto-sede"]).toContain("contacto");
+  });
+});
+
+describe("estados cancelables", () => {
+  it("solo NUEVO y PENDIENTE", () => {
+    expect(ESTADOS_CANCELABLES).toEqual(["NUEVO", "PENDIENTE"]);
+    expect(ESTADOS.filter(isEstadoCancelable)).toEqual(["NUEVO", "PENDIENTE"]);
+  });
+});
+
+describe("parseVista", () => {
+  it.each(VISTAS)("reconoce la vista %s", (vista) => {
+    expect(parseVista(vista)).toBe(vista);
+    expect(VISTA_LABELS[vista].length).toBeGreaterThan(0);
+  });
+
+  it.each([undefined, "", "BOLSA", "x", "__proto__", "constructor", "toString", "hasOwnProperty"])(
+    "trata %j como todos",
+    (value) => {
+      expect(parseVista(value)).toBe("todos");
+    },
+  );
 });

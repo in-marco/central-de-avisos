@@ -22,10 +22,14 @@ import {
   upsertSede,
 } from "@/lib/clientes/clientes";
 import {
+  cancelarAvisoInTransaction,
+  countAvisosPorVista,
   createAvisoInTransaction,
   getAvisoDetalle,
   getClienteParaAviso,
   listAvisos,
+  listBolsa,
+  validarAvisoInTransaction,
 } from "@/lib/avisos/avisos";
 import { createPortalScenario } from "@/lib/portal/db-test-fixtures";
 import {
@@ -374,7 +378,7 @@ describe("aislamiento multiempresa", () => {
     ]);
   });
 
-  it("la oficina de A no lista, lee ni crea avisos con datos de B", async () => {
+  it("la oficina de A no lista, lee, crea, valida, cancela ni ve en su bolsa avisos de B", async () => {
     const suffix = uniqueSuffix();
 
     const result = await inRollback(async (tx) => {
@@ -464,8 +468,77 @@ describe("aislamiento multiempresa", () => {
         }),
         avisosB: await tx.aviso.count({ where: { empresaId: b.empresa.id } }),
         avisosA: await tx.aviso.count({ where: { empresaId: a.empresa.id } }),
+        ...(await (async () => {
+          // aviso-validation-pool: A no valida, no cancela ni ve en su bolsa
+          // avisos de B (uno NUEVO y otro ya en la bolsa de B).
+          const nuevoB = b.avisoId;
+          const pendienteB = await createAvisoInTransaction(tx, b.empresa.id, b.usuario.id, {
+            clienteId: b.clienteId,
+            sedeId: b.sede.id,
+            contactoId: b.contacto.id,
+            descripcion: "Avería B en bolsa",
+            prioridad: "ALTA",
+          });
+
+          if (!pendienteB.ok) {
+            throw new Error(pendienteB.error);
+          }
+
+          const validadoEnB = await validarAvisoInTransaction(
+            tx,
+            b.empresa.id,
+            b.usuario.id,
+            pendienteB.avisoId,
+          );
+          const antes = await tx.aviso.findMany({
+            where: { empresaId: b.empresa.id },
+            orderBy: { id: "asc" },
+          });
+          const validarBDesdeA = await validarAvisoInTransaction(
+            tx,
+            a.empresa.id,
+            a.usuario.id,
+            nuevoB,
+          );
+          const cancelarNuevoBDesdeA = await cancelarAvisoInTransaction(
+            tx,
+            a.empresa.id,
+            a.usuario.id,
+            { avisoId: nuevoB, motivo: "Intento" },
+          );
+          const cancelarPendienteBDesdeA = await cancelarAvisoInTransaction(
+            tx,
+            a.empresa.id,
+            a.usuario.id,
+            { avisoId: pendienteB.avisoId, motivo: "Intento" },
+          );
+          const despues = await tx.aviso.findMany({
+            where: { empresaId: b.empresa.id },
+            orderBy: { id: "asc" },
+          });
+          return {
+            validadoEnB,
+            validarBDesdeA,
+            cancelarNuevoBDesdeA,
+            cancelarPendienteBDesdeA,
+            avisosBSinCambios: JSON.stringify(antes) === JSON.stringify(despues),
+            bolsaA: await listBolsa(tx, a.empresa.id),
+            bolsaB: (await listBolsa(tx, b.empresa.id)).map((aviso) => aviso.id),
+            pendienteBId: pendienteB.avisoId,
+            recuentoA: await countAvisosPorVista(tx, a.empresa.id),
+          };
+        })()),
       };
     });
+
+    expect(result.validadoEnB.ok).toBe(true);
+    expect(result.validarBDesdeA).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.cancelarNuevoBDesdeA).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.cancelarPendienteBDesdeA).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.avisosBSinCambios).toBe(true);
+    expect(result.bolsaA).toEqual([]);
+    expect(result.bolsaB).toEqual([result.pendienteBId]);
+    expect(result.recuentoA).toEqual({ todos: 1, "por-validar": 1, bolsa: 0, cancelados: 0 });
 
     expect(result.listadoA.map((aviso) => aviso.id)).toEqual([result.a.avisoId]);
     expect(result.detalleB).toBeNull();

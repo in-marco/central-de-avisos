@@ -44,10 +44,63 @@ const AVISO_ERRORS: Record<string, AvisoErrorInfo> = {
 
 const AVISO_OK_MESSAGES: Record<string, string> = {
   creado: "Aviso creado.",
+  validado: "Aviso validado y publicado en la bolsa.",
+  cancelado: "Aviso cancelado.",
 };
 
 export function avisoError(code: string | undefined): AvisoErrorInfo | undefined {
   return code !== undefined && Object.hasOwn(AVISO_ERRORS, code) ? AVISO_ERRORS[code] : undefined;
+}
+
+/** Campo del formulario de cancelación marcado con `aria-invalid`. */
+export type AvisoAccionErrorField = "motivo" | "confirmacion";
+
+export type AvisoAccionErrorInfo = {
+  summary: string;
+  field?: AvisoAccionErrorField;
+  fieldMessage?: string;
+};
+
+/** Errores de validar y cancelar en el detalle `/panel/avisos/<id>`. */
+const AVISO_ACCION_ERRORS: Record<string, AvisoAccionErrorInfo> = {
+  incompleto: {
+    summary:
+      "No se puede validar: el contacto ya no es de todo el cliente ni de la sede del aviso. Corrige el contacto en la ficha del cliente y vuelve a validar.",
+  },
+  estado: {
+    summary: "El aviso ya no está en un estado que permita esta acción. Revisa su estado actual.",
+  },
+  motivo: {
+    summary: "Revisa el motivo de la cancelación.",
+    field: "motivo",
+    fieldMessage: "Escribe el motivo de la cancelación (entre 1 y 500 caracteres).",
+  },
+  confirmacion: {
+    summary: "Confirma que este aviso no se ejecutará para poder cancelarlo.",
+    field: "confirmacion",
+    fieldMessage: "Marca la casilla de confirmación.",
+  },
+  servicio: {
+    summary: "No se pudo completar la acción. Inténtalo de nuevo en unos minutos.",
+  },
+};
+
+export function avisoAccionError(code: string | undefined): AvisoAccionErrorInfo | undefined {
+  return code !== undefined && Object.hasOwn(AVISO_ACCION_ERRORS, code)
+    ? AVISO_ACCION_ERRORS[code]
+    : undefined;
+}
+
+/** Errores del listado `/panel/avisos`. */
+const AVISO_LISTADO_ERRORS: Record<string, string> = {
+  "no-encontrado": "No se encontró ese aviso en tu empresa. Elige uno del listado.",
+  servicio: "No se pudo completar la acción. Inténtalo de nuevo en unos minutos.",
+};
+
+export function avisoListadoError(code: string | undefined): string | undefined {
+  return code !== undefined && Object.hasOwn(AVISO_LISTADO_ERRORS, code)
+    ? AVISO_LISTADO_ERRORS[code]
+    : undefined;
 }
 
 export function avisoOkMessage(code: string | undefined): string | undefined {
