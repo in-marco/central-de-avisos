@@ -118,9 +118,11 @@ export default async function InvitacionPage({
         />
       );
     case "CADUCADA":
+      // El tipo no se conoce aquí (no se revela nada de una invitación no
+      // válida): el texto sirve para administradores y contactos de cliente.
       return (
         <RejectedInvitation
-          message="Esta invitación ha caducado. Pide al proveedor una nueva invitación."
+          message="Esta invitación ha caducado. Pide a quien te invitó un enlace nuevo."
           title="Invitación caducada"
         />
       );
@@ -141,16 +143,32 @@ export default async function InvitacionPage({
     timeStyle: "short",
   }).format(lookup.expiraEn);
 
+  const esPortal = lookup.tipo === "CONTACTO_CLIENTE";
+
   return (
-    <InvitationCard eyebrow="Central de avisos" title="Activa tu cuenta">
+    <InvitationCard
+      eyebrow={esPortal ? "Portal de cliente" : "Central de avisos"}
+      title="Activa tu cuenta"
+    >
       <p className="mt-2 text-sm leading-6 text-muted">
-        Te han invitado como administrador de tu empresa. Elige una contraseña
-        para entrar en el panel.
+        {esPortal
+          ? `${lookup.empresa.nombre} te ha invitado al portal de cliente. Elige una contraseña para consultar los datos y las sedes de tu empresa.`
+          : "Te han invitado como administrador de tu empresa. Elige una contraseña para entrar en el panel."}
       </p>
 
       <dl className="mt-6 grid gap-4 rounded-md border border-border bg-background p-4 text-sm sm:grid-cols-2">
+        {esPortal && lookup.cliente ? (
+          <div className="sm:col-span-2">
+            <dt className="font-medium text-muted">Cliente</dt>
+            <dd className="mt-1 break-words text-base text-text">
+              {lookup.cliente.razonSocial}
+            </dd>
+          </div>
+        ) : null}
         <div className="sm:col-span-2">
-          <dt className="font-medium text-muted">Empresa</dt>
+          <dt className="font-medium text-muted">
+            {esPortal ? "Empresa de servicios" : "Empresa"}
+          </dt>
           <dd className="mt-1 text-base text-text">{lookup.empresa.nombre}</dd>
         </div>
         <div>

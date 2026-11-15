@@ -122,7 +122,11 @@ npm run dev
   `OFICINA`; técnico y superadmin reciben 403; un cliente de otra empresa, 404)
 - Avisos: `http://localhost:3000/panel/avisos`, `/panel/avisos/nuevo` y
   `/panel/avisos/<id>` (permiso `avisos.crear`: `ADMINISTRADOR` y `OFICINA`;
-  técnico y superadmin reciben 403; un aviso de otra empresa, 404)
+  técnico, usuario de cliente y superadmin reciben 403; un aviso de otra
+  empresa, 404)
+- Portal de cliente: `http://localhost:3000/portal` y `/portal/sedes/<id>`
+  (solo usuarios de cliente; empresa y superadmin reciben 403; una sede fuera
+  de su cliente, 403 uniforme sin datos)
 - Panel de proveedor: `http://localhost:3000/superadmin` (solo
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
@@ -138,7 +142,7 @@ se commitean. La autenticación es propia (sin Auth.js): cookie
 privadas. `/superadmin` añade `requireSuperadmin` (`es_superadmin` y
 `empresa_id` nulo); un usuario de empresa recibe 403 y un anónimo va al login.
 El alta de empresa genera un administrador `INACTIVO` sin contraseña y una
-invitación de 7 días; el enlace se muestra una sola vez desde una cookie flash
+invitación de 7 días; el enlace solo se muestra durante 60 s desde una cookie flash
 y no se envía por email ni se puede recuperar. El invitado lo abre en
 `/invitacion/<token>`, define una contraseña de 12 a 128 caracteres y entra en
 `/panel` con sesión de su empresa; la aceptación es atómica y de un solo uso
@@ -153,6 +157,14 @@ configuración fiscal, serie, tarifa horaria y modo NO-VERIFACTU en
 clientes, sedes y contactos en `/panel/clientes` (`POST /api/panel/clientes`,
 `/datos`, `/sedes` y `/contactos`) y registran avisos en `/panel/avisos`
 (`POST /api/panel/avisos`; el aviso nace `NUEVO` con origen `OFICINA`).
+También invitan a un contacto con email al portal de cliente desde su ficha
+(`POST /api/panel/clientes/portal`, cookie flash `central_invitacion_portal`
+de 60 s; «Generar nuevo enlace» caduca el anterior). El contacto activa su
+cuenta en `/invitacion/<token>` y entra en `/portal` (solo lectura: su cliente
+y sus sedes). El usuario de cliente tiene `cliente_id` y ningún rol; `/panel`
+le lleva a `/portal`, el resto de `/panel/*` (avisos incluidos) le responde
+403 y toda consulta del portal usa `clienteFilter(clienteScope(session))`
+(`src/lib/portal/scope.ts`).
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.
@@ -170,7 +182,9 @@ No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
   `SMOKE_PORT`, `SMOKE_EMAIL`/`SMOKE_PASSWORD` (superadmin),
   `SMOKE_NORMAL_EMAIL`/`SMOKE_NORMAL_PASSWORD` (administrador de empresa) y,
   opcionales, `SMOKE_OFICINA_EMAIL`/`SMOKE_OFICINA_PASSWORD` y
-  `SMOKE_TECNICO_EMAIL`/`SMOKE_TECNICO_PASSWORD` para la matriz por rol.
+  `SMOKE_TECNICO_EMAIL`/`SMOKE_TECNICO_PASSWORD` para la matriz por rol, y
+  `SMOKE_CLIENTE_EMAIL`/`SMOKE_CLIENTE_PASSWORD` (usuario de cliente que ya
+  activó su invitación; el seed no crea ninguno).
 - Al terminar, matar el árbol de procesos y verificar que el puerto queda libre.
 - No dejar cookies, logs, perfiles de navegador ni bases de verificación. Las
   pruebas de integración usan una base separada que se elimina al terminar;

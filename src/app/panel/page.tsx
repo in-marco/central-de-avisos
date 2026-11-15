@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/auth/current-session";
 import { formatRoles } from "@/lib/authz/permissions";
 
@@ -11,6 +12,13 @@ export const metadata: Metadata = {
 
 export default async function PanelPage() {
   const session = await requireSession("/panel");
+
+  // El usuario de cliente no tiene panel de empresa: su superficie es /portal.
+  // Así el login (con `next=/panel` por defecto) le lleva a su portal.
+  if (session.cliente) {
+    redirect("/portal");
+  }
+
   const ambito = session.empresa?.nombre ?? "Proveedor SaaS";
   const caducidad = new Intl.DateTimeFormat("es-ES", {
     dateStyle: "medium",

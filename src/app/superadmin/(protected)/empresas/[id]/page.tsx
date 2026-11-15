@@ -23,7 +23,7 @@ import {
   PageHeader,
   StatusChip,
 } from "../../_components/ui";
-import { CopyInvitationLink } from "./copy-link";
+import { CopyInvitationLink } from "@/app/_components/copy-invitation-link";
 
 export const dynamic = "force-dynamic";
 

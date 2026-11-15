@@ -68,6 +68,15 @@ describe("navegación del panel por permisos", () => {
     expect(labels(null)).toEqual([]);
   });
 
+  it("el usuario de cliente no ve ninguna entrada del panel", () => {
+    expect(
+      labels({ ...company([]), cliente: { id: "cliente-1" } }),
+    ).toEqual([]);
+    expect(
+      labels({ ...company(["ADMINISTRADOR"]), cliente: { id: "cliente-1" } }),
+    ).toEqual([]);
+  });
+
   it("marca como activa solo la ruta correspondiente", () => {
     const inicio = item("/panel");
     const usuarios = item("/panel/usuarios");

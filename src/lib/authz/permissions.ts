@@ -92,17 +92,19 @@ export type AuthzSubject = {
   esSuperadmin: boolean;
   empresa: { id: string } | null;
   roles: readonly Rol[];
+  /** Usuario de cliente (portal): nunca tiene permisos de empresa. */
+  cliente?: { id: string } | null;
 };
 
 /**
  * Decide en servidor si la sesión tiene un permiso de empresa. Por defecto se
- * deniega: sin sesión, superadmin o sin empresa → `false`.
+ * deniega: sin sesión, superadmin, sin empresa o usuario de cliente → `false`.
  */
 export function can(
   session: AuthzSubject | null | undefined,
   permiso: Permiso,
 ): boolean {
-  if (!session || session.esSuperadmin || !session.empresa) {
+  if (!session || session.esSuperadmin || !session.empresa || session.cliente) {
     return false;
   }
 

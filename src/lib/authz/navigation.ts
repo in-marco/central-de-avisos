@@ -36,7 +36,9 @@ export function visibleNavItems(
   session: AuthzSubject | null | undefined,
   items: readonly NavItem[] = NAV_ITEMS,
 ): NavItem[] {
-  if (!session) {
+  // El usuario de cliente no usa la navegación del panel: su superficie es
+  // /portal (y /panel le redirige allí).
+  if (!session || session.cliente) {
     return [];
   }
 

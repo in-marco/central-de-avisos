@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { disconnectDb, getDb } from "@/db/client";
 import { inRollback, uniqueSuffix } from "@/db/db-test-utils";
+import { invitePortalContactInTransaction } from "@/lib/portal/invitaciones";
 import {
+  countPendingInvitations,
   createCompanyWithInvitation,
   createCompanyWithInvitationInTransaction,
   getCompanyDetail,
@@ -332,5 +334,77 @@ describe("alta de empresa con plan e invitación", () => {
       await db.empresa.deleteMany({ where: { planId: plan.id } });
       await db.plan.deleteMany({ where: { id: plan.id } });
     }
+  });
+});
+
+describe("las vistas de proveedor ignoran el portal de cliente", () => {
+  it("listado, detalle y contador de pendientes solo muestran la invitación de administrador", async () => {
+    const suffix = uniqueSuffix();
+    const createdAt = new Date("2026-11-14T10:00:00.000Z");
+    const portalAt = new Date("2026-11-14T12:00:00.000Z");
+    const now = new Date("2026-11-14T13:00:00.000Z");
+
+    const result = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan portal proveedor ${suffix}`, importeMensual: "10.00" },
+      });
+      const created = await createCompanyWithInvitationInTransaction(
+        tx,
+        companyValues(suffix, plan.id),
+        { now: createdAt },
+      );
+      if (!created.ok) {
+        throw new Error(created.error);
+      }
+      const cliente = await tx.cliente.create({
+        data: {
+          empresaId: created.empresaId,
+          razonSocial: "Cliente portal",
+          nif: "B12345678",
+          direccionFacturacion: "Calle 1",
+        },
+      });
+      const contacto = await tx.contacto.create({
+        data: {
+          empresaId: created.empresaId,
+          clienteId: cliente.id,
+          nombre: "Ana Contacto",
+          email: `contacto-${suffix}@example.com`,
+        },
+      });
+
+      const pendientesAntes = await countPendingInvitations(tx, now);
+      const portal = await invitePortalContactInTransaction(tx, {
+        empresaId: created.empresaId,
+        clienteId: cliente.id,
+        contactoId: contacto.id,
+        now: portalAt,
+      });
+      if (!portal.ok) {
+        throw new Error(portal.error);
+      }
+      const pendientesDespues = await countPendingInvitations(tx, now);
+      const list = await listCompaniesWithInvitations(tx);
+      const detail = await getCompanyDetail(tx, created.empresaId);
+
+      return {
+        created,
+        portal,
+        pendientesAntes,
+        pendientesDespues,
+        row: list.find((empresa) => empresa.id === created.empresaId),
+        detail,
+      };
+    });
+
+    expect(result.pendientesDespues).toBe(result.pendientesAntes);
+    expect(result.row?.invitaciones).toHaveLength(1);
+    expect(result.row?.invitaciones[0]?.id).toBe(result.created.invitacionId);
+    expect(result.detail?.invitaciones.map((invitacion) => invitacion.id)).toEqual([
+      result.created.invitacionId,
+    ]);
+    expect(result.detail?.usuarios.map((usuario) => usuario.id)).toEqual([
+      result.created.usuarioId,
+    ]);
   });
 });

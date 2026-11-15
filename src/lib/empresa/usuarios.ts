@@ -24,7 +24,8 @@ export function listCompanyUsers(
   empresaId: string,
 ): Promise<CompanyUser[]> {
   return db.usuario.findMany({
-    where: { ...tenantFilter(empresaId), esSuperadmin: false },
+    // Los usuarios de cliente (portal) no son usuarios de empresa.
+    where: { ...tenantFilter(empresaId), esSuperadmin: false, clienteId: null },
     select: { id: true, nombre: true, email: true, estado: true, roles: true },
     orderBy: [{ nombre: "asc" }, { email: "asc" }],
   });
@@ -92,7 +93,13 @@ export async function updateUserRolesInTransaction(
   await tx.$queryRaw`SELECT id FROM empresas WHERE id = ${filter.empresaId}::uuid FOR UPDATE`;
 
   const usuario = await tx.usuario.findFirst({
-    where: { id: usuarioId.toLowerCase(), ...filter, esSuperadmin: false },
+    // Un usuario de cliente se trata como inexistente: no admite roles.
+    where: {
+      id: usuarioId.toLowerCase(),
+      ...filter,
+      esSuperadmin: false,
+      clienteId: null,
+    },
     select: { id: true },
   });
 

@@ -23,19 +23,27 @@
 - Puede tener varios roles combinables: administrador, oficina, técnico, cliente.
 - Implementado: `roles` es un atributo del usuario (lista del enum
   `rol_usuario`: `ADMINISTRADOR`, `OFICINA`, `TECNICO`). Los permisos se
-  derivan en código y se suman. El superadmin no tiene roles. El rol `CLIENTE`
-  se añadirá con el portal (`client-portal-invitation`), cuando exista
-  `cliente_id`.
+  derivan en código y se suman. El superadmin no tiene roles.
+- Usuario de cliente (implementado en `client-portal-invitation`): no hay rol
+  `CLIENTE`. Se identifica por `cliente_id` no nulo (FK compuesto con
+  `empresa_id` hacia `clientes`), sin roles de empresa (CHECK) y ligado a un
+  único contacto (`contacto_id` único). Su alcance es su cliente dentro de su
+  empresa y usa solo el portal (`/portal`).
 - La empresa conserva siempre al menos un administrador `ACTIVO`.
 
 ### Invitación
 - Pertenece a una empresa y a un usuario invitado.
-- Tipo `ADMINISTRADOR_EMPRESA` en este slice.
+- Tipos: `ADMINISTRADOR_EMPRESA` (alta de empresa por el proveedor; tras
+  aceptar, `/panel`) y `CONTACTO_CLIENTE` (acceso al portal de un contacto,
+  emitida por la oficina; tras aceptar, `/portal`).
 - Guarda solo el hash del token de invitación, la fecha de creación, la
   caducidad (7 días) y la fecha de aceptación opcional.
 - Estado derivado: `Pendiente`, `Caducada` o `Aceptada`.
 - La aceptación y el alta de contraseña pertenecen a la activación del
-  administrador; la invitación no concede permisos por sí misma.
+  usuario invitado; la invitación no concede permisos por sí misma.
+- Una invitación de contacto puede sustituirse por otra («Generar nuevo
+  enlace») mientras el usuario siga inactivo: las pendientes anteriores pasan a
+  `Caducada` (`expira_en = ahora`).
 
 ### Cliente
 - Pertenece a una empresa de servicios.
@@ -223,5 +231,7 @@ Pendiente ──aceptar──> Aceptada
 - Cambio de hora (DST) en Europe/Madrid: horas calculadas sobre instantes, no sobre texto.
 - Anulación de factura: el número no se reutiliza y el registro firmado se conserva.
 - Invitación no recuperable: si caduca la cookie flash, el enlace local ya no
-  se puede mostrar; reenviar o regenerar la invitación queda fuera de este
-  slice.
+  se puede mostrar. La de administrador no se puede reenviar ni regenerar; la
+  de contacto de cliente se sustituye con «Generar nuevo enlace».
+- Contacto cuyo email ya usa otra cuenta: no se puede invitar al portal hasta
+  cambiar el email del contacto (el email de usuario es único global).

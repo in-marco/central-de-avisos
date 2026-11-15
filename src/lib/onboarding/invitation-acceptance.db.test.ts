@@ -11,6 +11,8 @@ import {
 } from "@/lib/superadmin/companies";
 import { createInvitationToken } from "@/lib/superadmin/invitations";
 import type { CompanyFormValues } from "@/lib/superadmin/validation";
+import { createPortalScenario } from "@/lib/portal/db-test-fixtures";
+import { invitePortalContactInTransaction } from "@/lib/portal/invitaciones";
 import {
   acceptInvitation,
   acceptInvitationInTransaction,
@@ -152,6 +154,8 @@ describe("aceptación de la invitación", () => {
 
     expect(result.session?.empresa?.id).toBe(result.created.empresaId);
     expect(result.session?.esSuperadmin).toBe(false);
+    expect(result.session?.cliente).toBeNull();
+    expect(result.accepted.destino).toBe("/panel");
     expect(result.login.ok).toBe(true);
   });
 
@@ -257,6 +261,100 @@ describe("aceptación de la invitación", () => {
 
     expect(result.unknown).toEqual({ ok: false, reason: "NO_ENCONTRADA" });
     expect(result.malformed).toEqual({ ok: false, reason: "NO_ENCONTRADA" });
+  });
+});
+
+describe("aceptación de una invitación de contacto de cliente", () => {
+  async function invitedContact(tx: Prisma.TransactionClient, suffix: string) {
+    const s = await createPortalScenario(tx, suffix);
+    const invited = await invitePortalContactInTransaction(tx, {
+      empresaId: s.a.id,
+      clienteId: s.c1.cliente.id,
+      contactoId: s.c1.ana.id,
+      now: createdAt,
+    });
+
+    if (!invited.ok) {
+      throw new Error(invited.error);
+    }
+
+    return { s, invited };
+  }
+
+  it("la página la reconoce como portal con la razón social del cliente", async () => {
+    const result = await inRollback(async (tx) => {
+      const { s, invited } = await invitedContact(tx, uniqueSuffix());
+      return { s, lookup: await findInvitationByToken(tx, invited.token, later) };
+    });
+
+    expect(result.lookup).toMatchObject({
+      status: "VALIDA",
+      tipo: "CONTACTO_CLIENTE",
+      cliente: { razonSocial: "Cliente Uno" },
+      empresa: { id: result.s.a.id },
+      usuario: { nombre: "Ana Uno" },
+    });
+  });
+
+  it("activa al usuario de cliente, crea su sesión con cliente y su destino es /portal", async () => {
+    const result = await inRollback(async (tx) => {
+      const { s, invited } = await invitedContact(tx, uniqueSuffix());
+      const accepted = await acceptInvitationInTransaction(tx, {
+        token: invited.token,
+        passwordHash,
+        now: later,
+      });
+      if (!accepted.ok) {
+        throw new Error(accepted.reason);
+      }
+      const usuario = await tx.usuario.findUniqueOrThrow({
+        where: { id: invited.usuarioId },
+      });
+      const session = await getSessionByToken(tx, accepted.sessionToken, later);
+      const second = await acceptInvitationInTransaction(tx, {
+        token: invited.token,
+        passwordHash,
+        now: later,
+      });
+      return { s, accepted, usuario, session, second };
+    });
+
+    expect(result.accepted.destino).toBe("/portal");
+    expect(result.usuario.estado).toBe("ACTIVO");
+    expect(result.usuario.roles).toEqual([]);
+    expect(result.session?.cliente?.id).toBe(result.s.c1.cliente.id);
+    expect(result.session?.roles).toEqual([]);
+    expect(result.second).toEqual({ ok: false, reason: "ACEPTADA" });
+  });
+
+  it("rechaza una invitación de contacto caducada o de una empresa suspendida", async () => {
+    const result = await inRollback(async (tx) => {
+      const { invited } = await invitedContact(tx, uniqueSuffix());
+      const caducada = await acceptInvitationInTransaction(tx, {
+        token: invited.token,
+        passwordHash,
+        now: new Date("2026-11-21T10:00:00.000Z"),
+      });
+
+      const otra = await invitedContact(tx, uniqueSuffix());
+      await tx.empresa.update({
+        where: { id: otra.s.a.id },
+        data: { estado: "SUSPENDIDA" },
+      });
+      const suspendida = await acceptInvitationInTransaction(tx, {
+        token: otra.invited.token,
+        passwordHash,
+        now: later,
+      });
+      const usuario = await tx.usuario.findUniqueOrThrow({
+        where: { id: otra.invited.usuarioId },
+      });
+      return { caducada, suspendida, usuario };
+    });
+
+    expect(result.caducada).toEqual({ ok: false, reason: "CADUCADA" });
+    expect(result.suspendida).toEqual({ ok: false, reason: "EMPRESA_INACTIVA" });
+    expect(result.usuario.estado).toBe("INACTIVO");
   });
 });
 

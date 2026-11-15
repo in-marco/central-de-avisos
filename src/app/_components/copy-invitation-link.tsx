@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 
+/**
+ * Campo de solo lectura con el enlace de invitación y botón de copiar.
+ * Compartido por el superadmin (invitación de administrador) y por la ficha de
+ * cliente de `/panel` (invitación al portal). No importa código de servidor.
+ */
 export function CopyInvitationLink({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
 

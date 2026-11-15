@@ -8,7 +8,9 @@ combinables con gestión en `/panel/usuarios`, configuración fiscal y de
 facturación de la empresa en `/panel/empresa`, un panel de superadmin para
 planes, alta de empresas e invitación de su administrador, y la primera parte
 del dominio operativo: clientes con sedes y contactos en `/panel/clientes` y
-alta de avisos desde oficina en `/panel/avisos`.
+alta de avisos desde oficina en `/panel/avisos`. La oficina puede invitar a un
+contacto al portal de cliente de solo lectura (`/portal`), que muestra los
+datos y las sedes de su cliente.
 
 ## Capas y dirección de dependencias
 
@@ -21,6 +23,9 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   │    │                      de facturación), con tenantFilter o requireEmpresaId
   │    ├─ src/lib/clientes/   clientes, sedes y contactos (validación pura y repositorio con tenantFilter)
   │    ├─ src/lib/avisos/     avisos: validación pura del alta y repositorio con tenantFilter
+  │    ├─ src/lib/portal/     portal de cliente: contrato de alcance (scope, puro), guard,
+  │    │                      lecturas con clienteFilter e invitaciones de contactos
+  │    ├─ src/lib/onboarding/ activación de invitaciones (administrador y contacto)
   │    └─ src/lib/superadmin/ autorización, planes, altas e invitaciones
   └─ src/db/      acceso a datos y contrato de tenant
        └─ src/generated/prisma/ cliente Prisma generado (no versionado)
@@ -76,12 +81,22 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   `empresa_id` nulo, que el superadmin no tenga roles
   (`usuarios_superadmin_sin_roles`) y que la lista no tenga nulos
   (`usuarios_roles_sin_nulos`). La base de datos no exige un mínimo de un rol:
-  un usuario de empresa sin roles no tiene permisos.
+  un usuario de empresa sin roles no tiene permisos. Usuario de cliente
+  (migración `20261115100000_portal_cliente`): `cliente_id` y `contacto_id`
+  `uuid NULL`; FK compuesto `usuarios_cliente_id_empresa_id_fkey`
+  `(cliente_id, empresa_id) → clientes(id, empresa_id)` `Restrict`; FK simple
+  `contacto_id → contactos(id)` `Restrict` con `UNIQUE` (un acceso por
+  contacto; la regla «el contacto es de ese cliente» la aplica
+  `src/lib/portal/invitaciones.ts`); índice por cliente; CHECK
+  `usuarios_cliente_coherente` (con cliente: no superadmin, con empresa y
+  `cardinality(roles) = 0`) y `usuarios_contacto_requiere_cliente`. No hay rol
+  `CLIENTE`: el usuario de cliente se identifica por `cliente_id IS NOT NULL`.
 - `sesiones`: sesión opaca con FK `CASCADE` a `usuarios`, `token_hash` único,
   `creado_en`, `expira_en` y `revocada_en` nullable; índices por usuario y
   expiración y CHECK `expira_en > creado_en`. El token crudo nunca se guarda.
-- `invitaciones`: invitación de administrador de empresa con FK `Restrict` a
-  `empresas`, FK `CASCADE` a `usuarios`, enum `tipo_invitacion`, `token_hash`
+- `invitaciones`: invitación de un usuario con FK `Restrict` a
+  `empresas`, FK `CASCADE` a `usuarios`, enum `tipo_invitacion`
+  (`ADMINISTRADOR_EMPRESA` o `CONTACTO_CLIENTE`), `token_hash`
   único, `creado_en`, `expira_en` y `aceptada_en` nullable; índices por
   empresa, usuario y expiración. CHECK de expiración posterior y aceptación no
   anterior a la creación. El estado (`Pendiente`/`Caducada`/`Aceptada`) es
@@ -177,6 +192,10 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   `SameSite=Strict`, `Path=/superadmin/empresas`, `Max-Age=60`) y el detalle lo
   muestra una sola vez como `/invitacion/<token>`. No se envía email real, no
   se guarda en URL ni logs y no hay reenvío ni recuperación.
+- Las vistas de proveedor (listado, detalle y contador de pendientes) filtran
+  `tipo = ADMINISTRADOR_EMPRESA`, y el detalle lista solo usuarios con
+  `cliente_id` nulo: las invitaciones y usuarios del portal de cliente no son
+  del proveedor.
 - Auditoría y facturación mensual siguen fuera de este slice.
 
 ## Roles y permisos de empresa
@@ -185,8 +204,8 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   la unión `Permiso` y `ROLE_PERMISSIONS`, copia de las columnas Administrador,
   Oficina y Técnico de `docs/user-and-access-model.md`. `can(session,
   permiso)` suma los permisos de todos los roles y deniega por defecto: sin
-  sesión, superadmin o sin empresa → `false`. `normalizeRoles` valida contra el
-  enum, deduplica y ordena.
+  sesión, superadmin, sin empresa o usuario de cliente (`session.cliente`) →
+  `false`. `normalizeRoles` valida contra el enum, deduplica y ordena.
 - **Sesión:** `AuthenticatedUser`/`CurrentSession` incluyen `roles`, leídos de
   la base de datos en cada petición por `getSessionByToken` (revalidados con
   `normalizeRoles`; el superadmin siempre `[]`). Un cambio de roles surte
@@ -204,7 +223,8 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   `/panel` no llama a un guard. `src/app/panel/forbidden.tsx` captura los
   `forbidden()` de las páginas hijas y se pinta dentro del layout.
 - **Gestión de roles:** `/panel/usuarios` (permiso `usuarios.gestionar`) lista
-  los usuarios de la empresa con `tenantFilter` y sin superadmin, en tarjetas
+  los usuarios de la empresa con `tenantFilter`, sin superadmin y sin usuarios
+  de cliente (`cliente_id` nulo; cambiar sus roles da `no-encontrado`), en tarjetas
   con tres checkboxes por usuario. `POST /api/panel/usuarios/roles` comprueba
   mismo origen, aplica `authorizeCompanyRequest` y llama a
   `updateUserRoles` (`src/lib/empresa/usuarios.ts`), que en una transacción
@@ -230,8 +250,8 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   devuelve 405. Los campos `empresaId`/`id` del formulario se ignoran.
 - El alta de empresa crea al administrador invitado con
   `roles = {ADMINISTRADOR}` en la misma transacción.
-- Fuera de este slice: rol `CLIENTE` y portal, invitar o desactivar usuarios
-  de empresa y auditoría de cambios de rol.
+- Fuera de este slice: invitar o desactivar usuarios de empresa y auditoría de
+  cambios de rol. El portal de cliente no usa roles (ver «Portal de cliente»).
 
 ## Clientes, sedes y contactos
 
@@ -267,7 +287,7 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
 
 - **Permiso:** `avisos.crear` (Administrador y Oficina, también combinados con
   Técnico). Navegación «Avisos» justo después de «Inicio»; técnico, usuario sin
-  roles y superadmin reciben 403.
+  roles, usuario de cliente y superadmin reciben 403.
 - **Páginas** (`force-dynamic`, `requirePermission("avisos.crear")`):
   `/panel/avisos` (tabla en escritorio con scroll horizontal controlado,
   tarjetas pulsables en móvil, del más reciente al más antiguo, estado vacío),
@@ -295,6 +315,49 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   la edición y el alta desde el portal de cliente pertenecen a features
   posteriores.
 
+## Portal de cliente
+
+- **Usuario de cliente:** `usuarios.cliente_id` no nulo, `roles = {}` (CHECK),
+  ligado a su `contacto_id`. `AuthenticatedUser.cliente` (`{ id, razonSocial }`
+  o `null`) se carga en login y en `getSessionByToken`; un usuario de cliente
+  cuyo cliente no es de su empresa no autentica. `can()` le niega todo permiso
+  de empresa y `visibleNavItems` no le muestra navegación del panel.
+- **Contrato de alcance** (`src/lib/portal/scope.ts`, puro):
+  `isPortalSession`, `clienteScope(session) → { empresaId, clienteId }` (lanza
+  si la sesión no es de cliente) y `clienteFilter(scope)` para el `where` de
+  Prisma. Toda consulta del portal lo usa; las features de avisos y facturas
+  del portal deben usarlo y añadir su caso a `src/lib/portal/portal.db.test.ts`.
+- **Guard:** `requirePortalSession(nextPath)` (`src/lib/portal/guards.ts`):
+  anónimo → 307 a `/login?next=...`; sesión de empresa o superadmin →
+  `forbidden()`. Devuelve sesión y `scope`.
+- **Superficie `/portal`** (`force-dynamic`, `noindex`): `layout.tsx` (shell
+  simplificado: wordmark, nombre, email · razón social y «Cerrar sesión»; no
+  redirige ni deniega), `forbidden.tsx` (403 propio y genérico), `page.tsx`
+  (cliente: razón social, NIF y dirección de facturación; lista de sus sedes,
+  sin tarifa) y `sedes/[id]/page.tsx`. Una sede de otro cliente, de otra
+  empresa, inexistente o mal formada da el mismo 403 sin datos.
+  `src/lib/portal/portal-guards.test.ts` exige `requirePortalSession(` en cada
+  página, que el layout no deniegue y que no exista `/api/portal/*` (solo
+  lectura). `/panel` redirige al usuario de cliente a `/portal`; el resto de
+  `/panel/*` (incluidos `/panel/avisos` y `POST /api/panel/avisos`),
+  `/superadmin` y las APIs de panel le devuelven 403.
+- **Invitación** (oficina, `clientes.gestionar`): `/panel/clientes/[id]` muestra
+  por contacto un chip de estado (sin acceso, pendiente hasta…, caducada,
+  activo) y «Invitar al portal» (contacto con email y sin acceso) o «Generar
+  nuevo enlace» (pendiente o caducada). `POST /api/panel/clientes/portal`
+  (`openClientesRequest`) llama a `invitePortalContact`
+  (`src/lib/portal/invitaciones.ts`): en una transacción resuelve el contacto
+  por `tenantFilter` + `clienteId`, crea el usuario `INACTIVO` sin contraseña y
+  una invitación `CONTACTO_CLIENTE` de 7 días o, si ya existía inactivo,
+  bloquea su fila, caduca las pendientes (`expira_en = now`, solo si
+  `creado_en < now`) y crea otra. Responde 303 con `?ok=invitado|nuevo-enlace`
+  o `?error=contacto-sin-email|email-en-uso|ya-activo|no-encontrado|servicio`.
+  El token crudo viaja solo en la cookie flash `central_invitacion_portal`
+  (`HttpOnly`, `SameSite=Strict`, `Max-Age=60`, `Path=/panel/clientes`) y la
+  ficha lo muestra si corresponde a una invitación pendiente de ese cliente
+  (`findFlashPortalInvitation`). `CopyInvitationLink` vive en
+  `src/app/_components/` y lo comparten superadmin y panel.
+
 ## RLS: reevaluación al añadir clientes
 
 `clientes`, `sedes` y `contactos` son las primeras tablas operativas. RLS sigue
@@ -305,8 +368,15 @@ con `empresa_id` impiden en PostgreSQL mezclar empresas al escribir. La
 decisión se debe revisar antes de producción o cuando aparezca la primera
 consulta cruzada (ver `CONSTRAINTS.md`).
 
-## Activación del administrador invitado
+## Activación del usuario invitado
 
+- Sirve para los dos tipos de invitación: `ADMINISTRADOR_EMPRESA` (usuario sin
+  `cliente_id`, destino `/panel`) y `CONTACTO_CLIENTE` (usuario con
+  `cliente_id` cuyo cliente es de la empresa de la invitación, destino
+  `/portal`). `classifyInvitation` exige esa coherencia por tipo; si no se
+  cumple, la invitación se trata como no encontrada. La página adapta el texto
+  (eyebrow «Portal de cliente», razón social del cliente y empresa de
+  servicios) y `AcceptInvitationResult.destino` fija la redirección.
 - `/invitacion/[token]` es pública y `force-dynamic`. Valida el formato del
   token (base64url de 43 caracteres) antes de consultar y busca la invitación
   por `token_hash` en `src/lib/onboarding/invitation-acceptance.ts`. Es una
@@ -320,7 +390,8 @@ consulta cruzada (ver `CONSTRAINTS.md`).
   fuera de la transacción. Dentro de una única transacción:
   `updateMany` condicionado de `aceptada_en` (un solo ganador con envíos
   concurrentes), activación del usuario (`ACTIVO` + `password_hash`) y
-  creación de la sesión. Responde 303 a `/panel` con `central_sesion` y revoca
+  creación de la sesión. Responde 303 a `/panel` o `/portal` (según el tipo)
+  con `central_sesion` y revoca
   la sesión previa del navegador si existía.
 - Una invitación ya usada, caducada, desconocida o de una empresa
   `SUSPENDIDA` no activa al usuario ni crea sesión; la invitación de una
@@ -349,8 +420,9 @@ empresa y con las futuras invitaciones y roles.
   `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
 - **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth;
   privadas `/panel`, `/panel/usuarios`, `/panel/empresa`, `/panel/clientes`,
-  `/panel/avisos` y `/superadmin`. Cada página de
-  `/panel` llama a `requireSession` o `requirePermission`;
+  `/panel/avisos`, `/portal` y `/superadmin`. Cada página de
+  `/panel` llama a `requireSession` o `requirePermission`; cada página de
+  `/portal`, a `requirePortalSession`;
   `/superadmin` añade `requireSuperadmin`, que redirige a
   `/login?next=...` si no hay sesión y usa `forbidden()` si el usuario no es
   superadmin. `getCurrentSession` usa `cookies()` (asíncrona) y `cache()` de
@@ -382,9 +454,12 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
   y roles (CHECK, validaciones, aislamiento y último administrador con dos
   transacciones concurrentes reales) y clientes (columnas de `sedes` sin datos
   fiscales, CHECK, FK compuestos, alta con rollback, NIF duplicado por empresa,
-  sede de otro cliente y aislamiento A/B) y avisos (enums, CHECK, FK
+  sede de otro cliente y aislamiento A/B), avisos (enums, CHECK, FK
   compuestos, alta en las tres prioridades con `origen`/`estado` fijos, sede y
-  contacto que no encajan, listado, detalle y aislamiento A/B).
+  contacto que no encajan, listado, detalle y aislamiento A/B) y portal de
+  cliente (CHECK, FK y UNIQUE de usuarios de cliente, invitación y rechazos
+  con BD sin cambios, enlace nuevo, carrera de email, aceptación con destino
+  `/portal`, sesión con cliente y aislamiento C1/C2 de la misma empresa y A/B).
 - `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
   Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
   `init.sh` ni del gate.

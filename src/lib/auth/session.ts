@@ -30,6 +30,12 @@ export type AuthenticatedUser = {
    * superadmin siempre tiene `[]`.
    */
   roles: Rol[];
+  /**
+   * Cliente del usuario de portal (`usuarios.cliente_id`). `null` en usuarios
+   * de empresa y en el superadmin. Un usuario con cliente nunca tiene roles
+   * ni permisos de empresa: su alcance es `clienteScope` (src/lib/portal).
+   */
+  cliente: { id: string; razonSocial: string } | null;
 };
 
 export type CurrentSession = AuthenticatedUser & {
@@ -84,6 +90,7 @@ function toAuthenticatedUser(usuario: {
   esSuperadmin: boolean;
   roles: readonly string[];
   empresa: { id: string; nombre: string } | null;
+  cliente: { id: string; razonSocial: string } | null;
 }): AuthenticatedUser {
   // Se revalida contra el enum de la aplicación y se fuerza `[]` al
   // superadmin: nunca se conceden permisos de empresa por un valor inesperado.
@@ -97,8 +104,45 @@ function toAuthenticatedUser(usuario: {
     empresa: usuario.empresa
       ? { id: usuario.empresa.id, nombre: usuario.empresa.nombre }
       : null,
-    roles: usuario.esSuperadmin || !normalized.ok ? [] : normalized.roles,
+    roles:
+      usuario.esSuperadmin || usuario.cliente || !normalized.ok
+        ? []
+        : normalized.roles,
+    cliente: usuario.cliente
+      ? { id: usuario.cliente.id, razonSocial: usuario.cliente.razonSocial }
+      : null,
   };
+}
+
+type UsuarioConAmbito = {
+  empresaId: string | null;
+  esSuperadmin: boolean;
+  clienteId: string | null;
+  empresa: { estado: string } | null;
+  cliente: { empresaId: string } | null;
+};
+
+/**
+ * Comprueba el ámbito del usuario: superadmin sin empresa, o usuario de una
+ * empresa ACTIVA. Un usuario de cliente debe además tener su cliente cargado y
+ * de la misma empresa (defensa en profundidad sobre el FK compuesto).
+ */
+function hasValidScope(usuario: UsuarioConAmbito): boolean {
+  if (usuario.esSuperadmin) {
+    return usuario.empresaId === null && usuario.clienteId === null;
+  }
+
+  if (!usuario.empresa || usuario.empresa.estado !== "ACTIVA") {
+    return false;
+  }
+
+  if (usuario.clienteId !== null) {
+    return (
+      usuario.cliente !== null && usuario.cliente.empresaId === usuario.empresaId
+    );
+  }
+
+  return true;
 }
 
 /**
@@ -126,7 +170,7 @@ export async function authenticateCredentials({
   const usuario = emailIsValid
     ? await db.usuario.findUnique({
         where: { email: normalizedEmail },
-        include: { empresa: true },
+        include: { empresa: true, cliente: true },
       })
     : null;
 
@@ -147,11 +191,7 @@ export async function authenticateCredentials({
     return { ok: false, reason: "invalid" };
   }
 
-  if (usuario.esSuperadmin) {
-    if (usuario.empresaId !== null) {
-      return { ok: false, reason: "invalid" };
-    }
-  } else if (!usuario.empresa || usuario.empresa.estado !== "ACTIVA") {
+  if (!hasValidScope(usuario)) {
     return { ok: false, reason: "invalid" };
   }
 
@@ -186,7 +226,7 @@ export async function getSessionByToken(
     where: { tokenHash: hashSessionToken(token) },
     include: {
       usuario: {
-        include: { empresa: true },
+        include: { empresa: true, cliente: true },
       },
     },
   });
@@ -205,11 +245,7 @@ export async function getSessionByToken(
     return null;
   }
 
-  if (usuario.esSuperadmin) {
-    if (usuario.empresaId !== null) {
-      return null;
-    }
-  } else if (!usuario.empresa || usuario.empresa.estado !== "ACTIVA") {
+  if (!hasValidScope(usuario)) {
     return null;
   }
 

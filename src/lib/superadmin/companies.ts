@@ -167,7 +167,10 @@ export function listCompaniesWithInvitations(
   return db.empresa.findMany({
     include: {
       plan: true,
+      // Solo la invitación de administrador: las de contactos de cliente
+      // (portal) no son del proveedor.
       invitaciones: {
+        where: { tipo: "ADMINISTRADOR_EMPRESA" },
         include: { usuario: true },
         orderBy: { creadaEn: "desc" },
         take: 1,
@@ -185,8 +188,10 @@ export function getCompanyDetail(
     where: { id: empresaId },
     include: {
       plan: true,
-      usuarios: { orderBy: { creadoEn: "asc" } },
+      // Usuarios de empresa; los usuarios de cliente (portal) no se muestran.
+      usuarios: { where: { clienteId: null }, orderBy: { creadoEn: "asc" } },
       invitaciones: {
+        where: { tipo: "ADMINISTRADOR_EMPRESA" },
         include: { usuario: true },
         orderBy: { creadaEn: "desc" },
       },
@@ -205,6 +210,7 @@ export function countActivePlans(db: SuperadminDb) {
 export function countPendingInvitations(db: SuperadminDb, now: Date = new Date()) {
   return db.invitacion.count({
     where: {
+      tipo: "ADMINISTRADOR_EMPRESA",
       aceptadaEn: null,
       expiraEn: { gt: now },
     },

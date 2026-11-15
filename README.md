@@ -160,8 +160,9 @@ petición: un cambio surte efecto sin volver a iniciar sesión.
 - Oficina, técnico, un usuario sin roles y el superadmin reciben 403 en
   `/panel/usuarios` y en `POST /api/panel/usuarios/roles`; un anónimo va al
   login.
-- Fuera de este slice: rol Cliente y portal, invitar o desactivar usuarios de
-  empresa y auditoría de los cambios de rol.
+- Fuera de este slice: invitar o desactivar usuarios de empresa y auditoría de
+  los cambios de rol. Los usuarios del portal de cliente no aparecen aquí ni
+  admiten roles.
 
 ## Configuración de la empresa
 
@@ -219,12 +220,31 @@ Técnico) registran los avisos que comunican los clientes en `/panel/avisos`:
 - **Detalle** (`/panel/avisos/<id>`): estado, prioridad, origen, cliente
   (enlace a su ficha), sede, contacto, descripción completa, autor y fecha.
 - Un aviso o cliente de otra empresa se trata como inexistente. Técnico,
-  usuario sin roles y superadmin reciben 403.
+  usuario sin roles, usuario de cliente y superadmin reciben 403.
 - Fuera de este slice: validar, poner en bolsa, asignar, cancelar o editar
   avisos, número de aviso, filtros y paginación, y alta desde el portal de
   cliente.
 
-## Activación del administrador invitado
+## Portal de cliente
+
+- En la ficha del cliente, cada contacto muestra el estado de su acceso al
+  portal (sin acceso, invitación pendiente hasta…, invitación caducada o
+  acceso activo). «Invitar al portal» (solo contactos con email) crea un
+  usuario de cliente inactivo y una invitación de 7 días; el enlace
+  `/invitacion/<token>` se muestra una sola vez durante 60 s y no se envía por
+  email. «Generar nuevo enlace» sustituye a un enlace perdido o caducado y deja
+  el anterior caducado.
+- Un email que ya usa otra cuenta, un contacto con acceso activo o un contacto
+  de otro cliente o empresa se rechazan sin cambios.
+- El contacto activa su cuenta con una contraseña de 12 a 128 caracteres y
+  entra en `/portal`, de solo lectura: datos de su cliente (razón social, NIF,
+  dirección de facturación) y sus sedes (`/portal/sedes/<id>`). No ve tarifas
+  ni nada de otros clientes: cualquier otra sede responde 403. Después entra
+  por `/login` con normalidad y `/panel` le lleva a su portal.
+- Avisos y facturas del portal, retirada de acceso y email real llegarán en
+  features posteriores.
+
+## Activación del usuario invitado
 
 El administrador abre el enlace `/invitacion/<token>` que muestra el detalle de
 la empresa, ve su empresa y su email, y elige una contraseña de 12 a 128
@@ -234,8 +254,9 @@ de su empresa; después usa `/login` con normalidad.
 - El enlace es de un solo uso. Si ya se usó, caducó (7 días) o la empresa está
   suspendida, la página lo indica y no activa la cuenta.
 - Un enlace desconocido responde 404 sin revelar datos.
-- No hay reenvío ni regeneración de invitaciones: si el enlace se pierde o
-  caduca, hoy no se puede emitir otro desde la interfaz.
+- No hay reenvío ni regeneración de invitaciones de administrador: si el
+  enlace se pierde o caduca, hoy no se puede emitir otro desde la interfaz.
+  Las invitaciones al portal de cliente sí admiten «Generar nuevo enlace».
 
 ## Desarrollo
 
@@ -252,11 +273,12 @@ npm run dev
 - Clientes: <http://localhost:3000/panel/clientes> (administrador y oficina)
 - Avisos: <http://localhost:3000/panel/avisos>, `/panel/avisos/nuevo` y
   `/panel/avisos/<id>` (administrador y oficina)
+- Portal de cliente: <http://localhost:3000/portal> (solo usuarios de cliente)
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
 - Activación de invitado: `http://localhost:3000/invitacion/<token>` (enlace
-  mostrado tras el alta de empresa)
+  mostrado tras el alta de empresa o la invitación al portal)
 - Salud: <http://localhost:3000/health>
 
 `GET /health` comprueba PostgreSQL con un timeout de 2 s:
@@ -320,8 +342,11 @@ duplicados, plan inactivo, invitación hasheada, estados y rollback) y roles
 configuración de facturación (columnas, enum, CHECK de serie y tarifa,
 normalización, NIF duplicado y aislamiento) y clientes (CHECK, FK compuestos,
 alta con rollback, NIF por empresa, sede de otro cliente y aislamiento entre
-empresas) y avisos (enums, CHECK, FK compuestos, alta con `origen`/`estado`
-fijos, sede y contacto que no encajan, listado, detalle y aislamiento).
+empresas), avisos (enums, CHECK, FK compuestos, alta con `origen`/`estado`
+fijos, sede y contacto que no encajan, listado, detalle y aislamiento) y
+portal de cliente (CHECK, FK y UNIQUE de usuarios de cliente, invitación,
+rechazos, enlace nuevo, aceptación y aislamiento entre clientes de la misma
+empresa y entre empresas).
 
 Smoke HTTP con `next start` (Git Bash; `SMOKE_*` opcionales para las
 comprobaciones autenticadas por rol):
@@ -332,8 +357,12 @@ SMOKE_EMAIL=superadmin@demo.local SMOKE_PASSWORD=... \
 SMOKE_NORMAL_EMAIL=admin@demo.local SMOKE_NORMAL_PASSWORD=... \
 SMOKE_OFICINA_EMAIL=oficina@demo.local SMOKE_OFICINA_PASSWORD=... \
 SMOKE_TECNICO_EMAIL=tecnico@demo.local SMOKE_TECNICO_PASSWORD=... \
+SMOKE_CLIENTE_EMAIL=<contacto activado> SMOKE_CLIENTE_PASSWORD=... \
 bash scripts/validate-smoke.sh
 ```
+
+`SMOKE_CLIENTE_*` es opcional y necesita un contacto que ya haya activado su
+invitación al portal (el seed no crea usuarios de cliente).
 
 ## Estructura
 
@@ -347,7 +376,11 @@ bash scripts/validate-smoke.sh
   `forbidden.tsx` (403 propio).
 - `src/app/api/panel/usuarios/roles/` — `POST` de cambio de roles.
 - `src/app/api/panel/empresa/` — `POST` de configuración de la empresa.
-- `src/app/api/panel/clientes/` — `POST` de alta, datos, sedes y contactos.
+- `src/app/api/panel/clientes/` — `POST` de alta, datos, sedes, contactos e
+  invitación al portal (`portal/`).
+- `src/app/portal/` — portal de cliente (layout, 403 propio, portada y sede).
+- `src/lib/portal/` — contrato de alcance de cliente (`scope.ts`), guard
+  `requirePortalSession`, lecturas del portal e invitaciones de contactos.
 - `src/lib/clientes/` — validación pura y repositorio de clientes, sedes y
   contactos con `tenantFilter`.
 - `src/app/api/panel/avisos/` — `POST` de alta de aviso.

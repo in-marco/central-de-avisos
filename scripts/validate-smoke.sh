@@ -86,6 +86,23 @@ expect_status() {
   echo "OK   $method $path -> $code"
 }
 
+expect_redirect() {
+  local path="$1"
+  local expected_code="$2"
+  local expected_location="$3"
+  shift 3
+  local out code location
+  out="$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" --max-time 10 "$@" "${BASE_URL}${path}")"
+  code="${out%% *}"
+  location="${out#* }"
+  location="${location#"${BASE_URL}"}"
+  location="${location#http://localhost:${PORT}}"
+  if [[ "$code" != "$expected_code" || "$location" != "$expected_location" ]]; then
+    fail "GET $path: esperado $expected_code -> $expected_location, recibido $code -> $location"
+  fi
+  echo "OK   GET $path -> $code $location"
+}
+
 expect_json_status_ok() {
   local body
   body="$(curl -fsS --max-time 10 "${BASE_URL}/health")" || fail "GET /health no respondió 2xx"
@@ -164,6 +181,14 @@ for clientes_api in /api/panel/clientes /api/panel/clientes/datos /api/panel/cli
 done
 expect_status POST /api/panel/clientes 403 -H "Origin: http://evil.example"
 expect_status POST /api/panel/clientes 307 -H "Origin: ${BASE_URL}"
+# Portal de cliente sin sesión: páginas al login con su `next`; la invitación
+# al portal es solo POST y de mismo origen. No crea datos.
+RANDOM_UUID="00000000-0000-4000-8000-000000000000"
+expect_redirect /portal 307 "/login?next=%2Fportal"
+expect_redirect "/portal/sedes/${RANDOM_UUID}" 307 "/login?next=%2Fportal%2Fsedes%2F${RANDOM_UUID}"
+expect_status GET /api/panel/clientes/portal 405
+expect_status POST /api/panel/clientes/portal 403 -H "Origin: http://evil.example"
+expect_status POST /api/panel/clientes/portal 307 -H "Origin: ${BASE_URL}"
 
 # Avisos sin sesión: páginas al login, API solo POST y mismo origen. No crea datos.
 expect_status GET /panel/avisos 307
@@ -216,6 +241,9 @@ if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   expect_status GET /panel/clientes 403 -b "$COOKIE_JAR"
   expect_status POST /api/panel/clientes 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   check_avisos_access "$COOKIE_JAR" 403
+  expect_status POST /api/panel/clientes/portal 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  # El portal es solo para usuarios de cliente.
+  expect_status GET /portal 403 -b "$COOKIE_JAR"
   expect_status POST /api/auth/logout 303 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status GET /panel 307
 fi
@@ -242,6 +270,11 @@ if [[ -n "${SMOKE_NORMAL_EMAIL:-}" || -n "${SMOKE_NORMAL_PASSWORD:-}" ]]; then
   expect_status GET /panel/clientes 200 -b "$NORMAL_COOKIE_JAR"
   expect_status GET /panel/clientes/nuevo 200 -b "$NORMAL_COOKIE_JAR"
   check_avisos_access "$NORMAL_COOKIE_JAR" 200
+  # Control positivo del patrón que usa la comprobación del usuario de cliente.
+  grep -q "href=\"/panel/avisos" <<<"$(curl -s --max-time 10 -b "$NORMAL_COOKIE_JAR" "${BASE_URL}/panel")"     || fail "GET /panel: el administrador no ve el enlace a Avisos"
+  echo "OK   GET /panel con enlace a /panel/avisos (administrador)"
+  expect_status GET /portal 403 -b "$NORMAL_COOKIE_JAR"
+  expect_status GET "/portal/sedes/${RANDOM_UUID}" 403 -b "$NORMAL_COOKIE_JAR"
   # Revoca la sesión para no dejar sesiones activas de verificación.
   expect_status POST /api/auth/logout 303 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 fi
@@ -274,9 +307,11 @@ check_role_without_user_management() {
   expect_status GET /panel/clientes "$clientes_status" -b "$ROLE_COOKIE_JAR"
   if [[ "$clientes_status" == "403" ]]; then
     expect_status POST /api/panel/clientes 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+    expect_status POST /api/panel/clientes/portal 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
   fi
   # Avisos sigue la misma matriz que clientes (oficina 200, técnico 403).
   check_avisos_access "$ROLE_COOKIE_JAR" "$clientes_status"
+  expect_status GET /portal 403 -b "$ROLE_COOKIE_JAR"
   expect_status POST /api/auth/logout 303 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 }
 
@@ -290,6 +325,47 @@ if [[ -n "${SMOKE_TECNICO_EMAIL:-}" || -n "${SMOKE_TECNICO_PASSWORD:-}" ]]; then
   [[ -n "${SMOKE_TECNICO_EMAIL:-}" && -n "${SMOKE_TECNICO_PASSWORD:-}" ]] \
     || fail "Define SMOKE_TECNICO_EMAIL y SMOKE_TECNICO_PASSWORD juntos"
   check_role_without_user_management "técnico" "$SMOKE_TECNICO_EMAIL" "$SMOKE_TECNICO_PASSWORD" 403
+fi
+
+# Usuario de cliente (portal). Opcional: requiere un contacto invitado que ya
+# haya activado su cuenta. No crea datos.
+if [[ -n "${SMOKE_CLIENTE_EMAIL:-}" || -n "${SMOKE_CLIENTE_PASSWORD:-}" ]]; then
+  [[ -n "${SMOKE_CLIENTE_EMAIL:-}" && -n "${SMOKE_CLIENTE_PASSWORD:-}" ]] \
+    || fail "Define SMOKE_CLIENTE_EMAIL y SMOKE_CLIENTE_PASSWORD juntos"
+
+  echo "Probando login de usuario de cliente..."
+  rm -f "$ROLE_COOKIE_JAR"
+  code="$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 \
+    -c "$ROLE_COOKIE_JAR" \
+    -H "Origin: ${BASE_URL}" \
+    --data-urlencode "email=${SMOKE_CLIENTE_EMAIL}" \
+    --data-urlencode "password=${SMOKE_CLIENTE_PASSWORD}" \
+    "${BASE_URL}/api/auth/login")"
+  [[ "$code" == "303" ]] || fail "Login usuario de cliente: esperado 303, recibido $code"
+
+  expect_status GET /portal 200 -b "$ROLE_COOKIE_JAR"
+  expect_redirect /panel 307 /portal -b "$ROLE_COOKIE_JAR"
+  expect_status GET /panel/clientes 403 -b "$ROLE_COOKIE_JAR"
+  expect_status GET /panel/usuarios 403 -b "$ROLE_COOKIE_JAR"
+  # Avisos de oficina: páginas y POST 403, igual que el resto de /panel/*.
+  check_avisos_access "$ROLE_COOKIE_JAR" 403
+  # Ninguna navegación (portal ni 403 del panel) ofrece «Avisos».
+  for nav_path in /portal /panel/avisos; do
+    nav_body="$(curl -s --max-time 10 -b "$ROLE_COOKIE_JAR" "${BASE_URL}${nav_path}")"
+    if grep -q "href=\"/panel/avisos" <<<"$nav_body"; then
+      fail "GET ${nav_path}: el usuario de cliente ve el enlace a Avisos"
+    fi
+    echo "OK   GET ${nav_path} sin enlace a /panel/avisos"
+  done
+  expect_status GET /panel/empresa 403 -b "$ROLE_COOKIE_JAR"
+  expect_status GET /superadmin 403 -b "$ROLE_COOKIE_JAR"
+  # Sede inexistente (o de otro cliente): 403 uniforme del portal.
+  expect_status GET "/portal/sedes/${RANDOM_UUID}" 403 -b "$ROLE_COOKIE_JAR"
+  expect_status GET /portal/sedes/no-es-un-uuid 403 -b "$ROLE_COOKIE_JAR"
+  expect_status POST /api/panel/clientes 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status POST /api/panel/clientes/portal 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status POST /api/panel/usuarios/roles 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  expect_status POST /api/auth/logout 303 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 fi
 
 echo "Smoke HTTP completado correctamente."
