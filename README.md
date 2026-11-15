@@ -117,8 +117,29 @@ antes de volver a sembrar. Inicia sesión en
   `/login?next=%2Fpanel`.
 - Un usuario `INACTIVO`, una empresa `SUSPENDIDA`, una sesión caducada o una
   revocada no autentican.
-- El rate limiting durable queda pendiente antes de exponer el login fuera de
-  demo/producción; ver `docs/risks-and-open-questions.md`.
+- El login limita los intentos en PostgreSQL (tabla `limites_login`): más de
+  5 por email o 50 por IP en 15 min (`LOGIN_RATE_LIMIT_WINDOW_SECONDS`)
+  muestran «Demasiados intentos. Espera unos minutos y vuelve a intentarlo.»,
+  exista o no el email. Un login correcto reinicia el contador de su email.
+
+## Demo pública
+
+Demo de presentación con datos ficticios en Vercel (`fra1`) y Neon
+(`aws-eu-central-1`), desplegada solo desde `main`. No es producción. Guía
+completa (variables, pasos de despliegue, validación, reset y rotación):
+`docs/operacion-demo.md`.
+
+- `DEMO_MODE=true` muestra la franja «Entorno de demostración · datos
+  ficticios» en todas las páginas.
+- El build de Production (`scripts/vercel-build.sh`) aplica las migraciones con
+  `DATABASE_URL_UNPOOLED` y construye.
+- Los datos de presentación se siembran desde local, en Git Bash, con
+  `.env.demo` (copia de `.env.demo.example`, ignorado por git):
+
+  ```bash
+  npm run demo:status
+  npm run demo:seed
+  ```
 
 ## Panel de proveedor
 
@@ -362,7 +383,10 @@ bash scripts/validate-smoke.sh
 ```
 
 `SMOKE_CLIENTE_*` es opcional y necesita un contacto que ya haya activado su
-invitación al portal (el seed no crea usuarios de cliente).
+invitación al portal (`db:seed` no crea usuarios de cliente; `demo:seed` crea
+`cliente@demo.local`). Con `SMOKE_BASE_URL=https://<url>` el smoke se lanza
+contra una URL remota sin arrancar servidor; `SMOKE_EXPECT_DEMO_BANNER=1`
+comprueba la franja de demo y `SMOKE_RATE_LIMIT=1` el bloqueo del login.
 
 ## Estructura
 
@@ -406,6 +430,10 @@ invitación al portal (el seed no crea usuarios de cliente).
 - `src/generated/prisma/` — cliente Prisma generado (ignorado por git).
 - `prisma/schema.prisma` — modelos base y sesiones.
 - `prisma/seed.ts` — seed demo idempotente con `tsx`.
+- `prisma/seed/` y `prisma/seed-demo.ts` — datos base compartidos y seed de
+  presentación de la demo pública (`npm run demo:seed`).
+- `scripts/vercel-build.sh`, `scripts/with-demo-env.sh`, `vercel.json` —
+  build de Vercel y entorno de los comandos `demo:*`.
 - `prisma/migrations/` — migraciones SQL versionadas.
 - `prisma.config.ts` — configuración de Prisma 7 y URL de migración.
 

@@ -173,6 +173,22 @@ le lleva a `/portal`, el resto de `/panel/*` (avisos incluidos) le responde
 403 y toda consulta del portal usa `clienteFilter(clienteScope(session))`
 (`src/lib/portal/scope.ts`).
 
+El login limita los intentos en la tabla `limites_login` (5 por email y 50 por
+IP en `LOGIN_RATE_LIMIT_WINDOW_SECONDS`, por defecto 900 s; el 6.º responde
+`error=bloqueado`).
+
+Demo pública (Vercel `fra1` + Neon `aws-eu-central-1`, solo `main`; guía en
+`docs/operacion-demo.md`): `DEMO_MODE=true` muestra la franja «Entorno de
+demostración · datos ficticios» (las páginas estáticas la fijan en el build);
+`DATABASE_URL` es el pooler (runtime) y `DATABASE_URL_UNPOOLED` la directa
+(CLI de Prisma); `DATABASE_CONNECTION_TIMEOUT_MS` ajusta el timeout de
+conexión. El build de Vercel es `scripts/vercel-build.sh` (migra y construye
+solo con `VERCEL_ENV=production`). Desde Git Bash y con `.env.demo` (ignorado;
+plantilla `.env.demo.example`): `npm run demo:status`, `npm run demo:migrate` y
+`npm run demo:seed` (datos de presentación con 3 clientes, 6 avisos y el
+usuario de cliente `cliente@demo.local`; contraseñas `SEED_*` de al menos 12
+caracteres, nunca en Vercel). `demo:*` nunca carga `.env`.
+
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.
 No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
@@ -191,7 +207,11 @@ No necesita `DATABASE_URL`. En Windows se ejecuta con Git Bash:
   opcionales, `SMOKE_OFICINA_EMAIL`/`SMOKE_OFICINA_PASSWORD` y
   `SMOKE_TECNICO_EMAIL`/`SMOKE_TECNICO_PASSWORD` para la matriz por rol, y
   `SMOKE_CLIENTE_EMAIL`/`SMOKE_CLIENTE_PASSWORD` (usuario de cliente que ya
-  activó su invitación; el seed no crea ninguno).
+  activó su invitación; `db:seed` no crea ninguno, `demo:seed` sí).
+  `SMOKE_BASE_URL=<url>` ejecuta las mismas comprobaciones contra una URL
+  remota sin arrancar servidor; `SMOKE_EXPECT_DEMO_BANNER=1` (o `0`) comprueba
+  la franja de demo en `/` y `/login`, y `SMOKE_RATE_LIMIT=1` el bloqueo del
+  login con un email aleatorio inexistente.
 - Al terminar, matar el árbol de procesos y verificar que el puerto queda libre.
 - No dejar cookies, logs, perfiles de navegador ni bases de verificación. Las
   pruebas de integración usan una base separada que se elimina al terminar;

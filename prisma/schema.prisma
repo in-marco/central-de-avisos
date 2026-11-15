@@ -303,3 +303,17 @@ model Aviso {
   @@index([contactoId])
   @@map("avisos")
 }
+
+// Límite de intentos de login (demo-deployment). Tabla técnica global sin
+// empresa_id: la identidad precede al tenant, como `planes`. La clave es
+// `email:<sha256>` o `ip:<sha256>`; nunca guarda el email ni la IP en claro.
+// Los CHECK viven en la migración SQL y el tiempo se calcula en PostgreSQL
+// (src/lib/auth/rate-limit.ts).
+model LimiteLogin {
+  clave         String   @id
+  intentos      Int
+  ventanaInicio DateTime @map("ventana_inicio") @db.Timestamptz(3)
+
+  @@index([ventanaInicio])
+  @@map("limites_login")
+}

@@ -1669,3 +1669,76 @@ describe("usuarios de cliente (portal)", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("limites_login (demo-deployment)", () => {
+  it("tabla técnica global sin empresa_id con PK, índice y CHECK", async () => {
+    const db = getDb();
+    const columns = await db.$queryRaw<
+      Array<{ column_name: string; data_type: string; is_nullable: string }>
+    >`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'limites_login'
+      ORDER BY column_name
+    `;
+    expect(columns).toEqual([
+      { column_name: "clave", data_type: "text", is_nullable: "NO" },
+      { column_name: "intentos", data_type: "integer", is_nullable: "NO" },
+      {
+        column_name: "ventana_inicio",
+        data_type: "timestamp with time zone",
+        is_nullable: "NO",
+      },
+    ]);
+
+    // Solo PK, FK y CHECK (PostgreSQL 18 también registra los NOT NULL en
+    // pg_constraint; Neon puede ir en 17).
+    const constraints = await db.$queryRaw<
+      Array<{ conname: string; contype: string }>
+    >`
+      SELECT conname, contype::text AS contype FROM pg_constraint
+      WHERE conrelid = 'public.limites_login'::regclass
+        AND contype IN ('c', 'p', 'f')
+      ORDER BY conname
+    `;
+    expect(constraints).toEqual([
+      { conname: "limites_login_clave_hash", contype: "c" },
+      { conname: "limites_login_intentos_positivos", contype: "c" },
+      { conname: "limites_login_pkey", contype: "p" },
+    ]);
+
+    const indexes = await db.$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'limites_login'
+      ORDER BY indexname
+    `;
+    expect(indexes.map((i) => i.indexname)).toEqual([
+      "limites_login_pkey",
+      "limites_login_ventana_inicio_idx",
+    ]);
+  });
+
+  it("rechaza claves en claro y contadores negativos", async () => {
+    const db = getDb();
+    await expect(
+      db.$executeRaw`
+        INSERT INTO "limites_login" ("clave", "intentos", "ventana_inicio")
+        VALUES ('email:admin@demo.local', 1, now())
+      `,
+    ).rejects.toThrow(/limites_login_clave_hash/);
+
+    await expect(
+      db.$executeRaw`
+        INSERT INTO "limites_login" ("clave", "intentos", "ventana_inicio")
+        VALUES ('ip:' || repeat('a', 64), -1, now())
+      `,
+    ).rejects.toThrow(/limites_login_intentos_positivos/);
+
+    await expect(
+      db.$executeRaw`
+        INSERT INTO "limites_login" ("clave", "intentos", "ventana_inicio")
+        VALUES ('ip:' || repeat('A', 64), 1, now())
+      `,
+    ).rejects.toThrow(/limites_login_clave_hash/);
+  });
+});
