@@ -71,7 +71,7 @@
   en la cookie flash `central_invitacion` (`HttpOnly`, `SameSite=Strict`,
   `Path=/superadmin/empresas`, 60 s). No hay email real, reenvío ni
   recuperación.
-- **Pendiente:** rate limiting durable, limpieza programada de sesiones y
+- **Pendiente:** limpieza programada de sesiones y
   auditoría de accesos. La aceptación de invitaciones y los roles combinables
   siguen fuera de este slice.
 - Planificado: email real de invitaciones, roles administrador/oficina/técnico/
@@ -133,5 +133,14 @@
 - **scrypt nativo versionado:** sin dependencias nativas adicionales; coste
   medido localmente ~0,24 s por hash con `N=131072,r=8,p=1`. El formato permite
   rehash futuro.
-- **Rate limiting diferido:** no se añade un limitador en memoria; debe
-  resolverse en edge/WAF o base de datos antes de producción.
+- **Rate limiting en PostgreSQL** (resuelto en `demo-deployment`): tabla
+  `limites_login` con upsert atómico y ventana en SQL, 5 intentos por email y
+  50 por IP en 15 min; sin estado en memoria ni servicios de pago (Upstash, KV o
+  WAF), compatible con serverless.
+- **Demo pública en Vercel + Neon (UE)** (`demo-deployment`, decisión del
+  usuario del 2026-11-15): Vercel `fra1` desde `main` sin previews, Neon
+  `aws-eu-central-1` con pooler en runtime (`DATABASE_URL`) y URL directa para
+  el CLI (`DATABASE_URL_UNPOOLED`), migraciones en el build de Production y
+  datos de presentación sembrados desde local. Es una demo, no el entorno de
+  producción: sin dominio propio, email real, copias ni monitorización. Ver
+  `docs/operacion-demo.md`.

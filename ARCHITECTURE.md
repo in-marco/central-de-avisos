@@ -433,6 +433,39 @@ empresa y con las futuras invitaciones y roles.
 - **Login/logout:** `POST` con `application/x-www-form-urlencoded`, comprobación
   de mismo origen cuando llega `Origin`, 303 y `next` validado para evitar open
   redirects. Logout marca `revocada_en` y borra la cookie.
+- **Límite de intentos:** antes de `authenticateCredentials`, el login registra
+  el intento en `limites_login` (`src/lib/auth/rate-limit.ts`): un upsert
+  atómico por clave (`email:<sha256 del email normalizado>` y, si hay
+  `x-real-ip`/`x-forwarded-for`, `ip:<sha256>`) con la ventana calculada en
+  SQL (`now()`, `LOGIN_RATE_LIMIT_WINDOW_SECONDS`, por defecto 900 s). Más de 5
+  intentos por email o 50 por IP → `error=bloqueado` sin scrypt ni cookie; un
+  error del limitador → `error=servicio`. Un login correcto borra la fila del
+  email y descuenta 1 a la de la IP. Cada registro borra las filas con ventana
+  de más de un día. `limites_login` es global, sin `empresa_id`, como `planes`.
+
+## Despliegue de la demo pública
+
+Demo de presentación, no producción (guía: `docs/operacion-demo.md`).
+
+- **Vercel** (`vercel.json`): framework Next.js, región de funciones `fra1`,
+  `buildCommand` `bash scripts/vercel-build.sh` e `ignoreCommand` que solo deja
+  construir Production (rama `main`). `vercel-build.sh` exige
+  `VERCEL_ENV=production` y `DATABASE_URL`, ejecuta `prisma migrate deploy` y
+  después `next build`.
+- **Neon PostgreSQL** (`aws-eu-central-1`): la app usa `DATABASE_URL` (pooler)
+  y `prisma.config.ts` usa `DATABASE_URL_UNPOOLED || DATABASE_URL` para el CLI.
+  `src/db/client.ts` lee `DATABASE_CONNECTION_TIMEOUT_MS` (500-30000; por
+  defecto 2000; 10000 en Vercel por el arranque en frío).
+- **Franja de demo:** `src/app/_components/demo-banner.tsx`, componente de
+  servidor renderizado en el layout raíz cuando `isDemoMode()`
+  (`DEMO_MODE === "true"`, `src/lib/demo.ts`). Aparece en toda página HTML
+  (también 403/404 propios); las páginas estáticas fijan el valor en el build.
+- **Seed de presentación:** `prisma/seed/base.ts` (plan, Empresa Demo y
+  usuarios, compartido con `db:seed`) y `prisma/seed/presentacion.ts`
+  (clientes, sedes, contactos, avisos `NUEVO`/`OFICINA` y usuario de cliente),
+  orquestados por `prisma/seed-demo.ts` en una transacción. Se lanza desde local
+  con `npm run demo:seed` a través de `scripts/with-demo-env.sh`, que carga solo
+  `.env.demo` (`DOTENV_PATH`).
 
 ## Salud
 
@@ -463,5 +496,10 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
 - `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
   Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
   `init.sh` ni del gate.
+- `npm run demo:status|migrate|seed`: comandos de la demo pública contra Neon,
+  solo con `.env.demo`; fuera del gate.
+- `scripts/validate-smoke.sh` admite `SMOKE_BASE_URL` (modo remoto, sin
+  servidor local), `SMOKE_EXPECT_DEMO_BANNER` (1 exige la franja, 0 su
+  ausencia) y `SMOKE_RATE_LIMIT=1` (bloqueo en el 6.º intento).
 - `npm run lint`, `npm run typecheck`, `npm run build` e `init.sh` deben pasar
   sin PostgreSQL y sin `DATABASE_URL`.

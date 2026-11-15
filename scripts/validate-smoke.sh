@@ -6,6 +6,15 @@ cd "$ROOT_DIR"
 
 PORT="${SMOKE_PORT:-3100}"
 BASE_URL="http://127.0.0.1:${PORT}"
+# Modo remoto (demo-deployment): con SMOKE_BASE_URL (sin barra final) no se
+# arranca servidor ni se exige build, .env ni puerto libre; las mismas
+# comprobaciones se lanzan contra esa URL.
+REMOTE=0
+if [[ -n "${SMOKE_BASE_URL:-}" ]]; then
+  REMOTE=1
+  BASE_URL="${SMOKE_BASE_URL%/}"
+fi
+DEMO_BANNER_TEXT="Entorno de demostración · datos ficticios"
 LOG_FILE="${TMPDIR:-/tmp}/central-de-avisos-smoke.log"
 COOKIE_JAR="${TMPDIR:-/tmp}/central-de-avisos-smoke.cookies"
 NORMAL_COOKIE_JAR="${TMPDIR:-/tmp}/central-de-avisos-smoke-normal.cookies"
@@ -69,7 +78,9 @@ trap cleanup EXIT INT TERM
 fail() {
   KEEP_LOG=1
   echo "FALLO: $*" >&2
-  echo "Log del servidor: $LOG_FILE" >&2
+  if [[ "$REMOTE" -eq 0 ]]; then
+    echo "Log del servidor: $LOG_FILE" >&2
+  fi
   exit 1
 }
 
@@ -112,36 +123,40 @@ expect_json_status_ok() {
   echo "OK   GET /health -> 200 status ok"
 }
 
-command -v npm >/dev/null 2>&1 || fail "npm no está disponible en PATH"
 command -v curl >/dev/null 2>&1 || fail "curl no está disponible en PATH"
-[[ -f .next/BUILD_ID ]] || fail "Falta el build de producción; ejecuta npm run build antes"
-if [[ -z "${DATABASE_URL:-}" && ! -f .env ]]; then
-  fail "DATABASE_URL no está configurada y no existe .env"
-fi
-if curl -s -o /dev/null --max-time 1 "${BASE_URL}/health"; then
-  fail "El puerto ${PORT} ya está en uso; detén el servidor anterior y reintenta"
-fi
-
-echo "Iniciando next start en ${BASE_URL}..."
-npm run start -- -p "$PORT" >"$LOG_FILE" 2>&1 &
-SERVER_PID=$!
-
-ready=0
-for _ in $(seq 1 30); do
-  if curl -fsS --max-time 1 "${BASE_URL}/health" >/dev/null 2>&1; then
-    ready=1
-    break
+if [[ "$REMOTE" -eq 1 ]]; then
+  echo "Modo remoto: comprobaciones contra ${BASE_URL} (sin servidor local)."
+else
+  command -v npm >/dev/null 2>&1 || fail "npm no está disponible en PATH"
+  [[ -f .next/BUILD_ID ]] || fail "Falta el build de producción; ejecuta npm run build antes"
+  if [[ -z "${DATABASE_URL:-}" && ! -f .env ]]; then
+    fail "DATABASE_URL no está configurada y no existe .env"
   fi
-  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-    break
+  if curl -s -o /dev/null --max-time 1 "${BASE_URL}/health"; then
+    fail "El puerto ${PORT} ya está en uso; detén el servidor anterior y reintenta"
   fi
-  sleep 1
-done
-if [[ "$ready" -ne 1 ]]; then
-  fail "next start no estuvo listo en 30 s"
-fi
 
-echo "Servidor listo (PID $SERVER_PID)"
+  echo "Iniciando next start en ${BASE_URL}..."
+  npm run start -- -p "$PORT" >"$LOG_FILE" 2>&1 &
+  SERVER_PID=$!
+
+  ready=0
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 1 "${BASE_URL}/health" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" -ne 1 ]]; then
+    fail "next start no estuvo listo en 30 s"
+  fi
+
+  echo "Servidor listo (PID $SERVER_PID)"
+fi
 
 expect_status GET / 200
 expect_json_status_ok
@@ -197,6 +212,55 @@ expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 307
 expect_status GET /api/panel/avisos 405
 expect_status POST /api/panel/avisos 403 -H "Origin: http://evil.example"
 expect_status POST /api/panel/avisos 307 -H "Origin: ${BASE_URL}"
+
+# Franja de demo (demo-deployment). SMOKE_EXPECT_DEMO_BANNER=1 exige la franja
+# en / y /login; =0 exige que no aparezca. Sin la variable no se comprueba.
+if [[ -n "${SMOKE_EXPECT_DEMO_BANNER:-}" ]]; then
+  for banner_path in / /login; do
+    banner_body="$(curl -s --max-time 10 "${BASE_URL}${banner_path}")"
+    if grep -qF "$DEMO_BANNER_TEXT" <<<"$banner_body"; then
+      [[ "$SMOKE_EXPECT_DEMO_BANNER" == "1" ]] \
+        || fail "GET ${banner_path}: aparece la franja de demo y no debería"
+      echo "OK   GET ${banner_path} con franja de demo"
+    else
+      [[ "$SMOKE_EXPECT_DEMO_BANNER" != "1" ]] \
+        || fail "GET ${banner_path}: falta la franja «${DEMO_BANNER_TEXT}»"
+      echo "OK   GET ${banner_path} sin franja de demo"
+    fi
+  done
+fi
+
+# Límite de intentos de login (demo-deployment). SMOKE_RATE_LIMIT=1: 6 POST con
+# un email aleatorio inexistente; los 5 primeros error=credenciales y el 6.º
+# error=bloqueado, sin cookie. Suma 6 intentos al cupo de la IP (50 en 15 min).
+if [[ "${SMOKE_RATE_LIMIT:-}" == "1" ]]; then
+  rl_email="smoke-$(date +%s)-${RANDOM}${RANDOM}@demo.invalid"
+  echo "Probando límite de intentos con un email inexistente aleatorio..."
+  for attempt in 1 2 3 4 5 6; do
+    rl_out="$(curl -s -o /dev/null -D - --max-time 10 \
+      -H "Origin: ${BASE_URL}" \
+      --data-urlencode "email=${rl_email}" \
+      --data-urlencode "password=smoke-contrasena-incorrecta" \
+      "${BASE_URL}/api/auth/login" | tr -d '\r')"
+    rl_code="$(awk 'NR == 1 {print $2}' <<<"$rl_out")"
+    rl_location="$(awk -F': ' 'tolower($1) == "location" {print $2}' <<<"$rl_out")"
+    if [[ "$attempt" -lt 6 ]]; then
+      rl_expected="error=credenciales"
+    else
+      rl_expected="error=bloqueado"
+    fi
+    [[ "$rl_code" == "303" && "$rl_location" == *"$rl_expected"* ]] \
+      || fail "Login fallido ${attempt}: esperado 303 con ${rl_expected}, recibido ${rl_code} -> ${rl_location}"
+    if grep -qi '^set-cookie:' <<<"$rl_out"; then
+      fail "Login fallido ${attempt}: no debe devolver Set-Cookie"
+    fi
+    echo "OK   POST /api/auth/login intento ${attempt} -> 303 ${rl_expected}"
+  done
+  rl_page="$(curl -s --max-time 10 "${BASE_URL}/login?error=bloqueado")"
+  grep -qF "Demasiados intentos. Espera unos minutos y vuelve a intentarlo." <<<"$rl_page" \
+    || fail "GET /login?error=bloqueado no muestra el mensaje de bloqueo"
+  echo "OK   GET /login?error=bloqueado con mensaje de bloqueo"
+fi
 
 # Avisos con sesión (permiso avisos.crear). Con 200 comprueba las tres
 # páginas (un id inexistente da el 404 propio); con 403, páginas y POST.

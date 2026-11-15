@@ -259,9 +259,17 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** el seed usa `SEED_*` locales, es idempotente, rechaza producción y
   no se ejecuta en `init.sh`. Motivo: evitar credenciales reales o datos demo
   en el gate o en producción.
-- **MUST** añadir rate limiting durable (edge/WAF o base de datos) antes de
-  exponer el login fuera de demo/producción. Motivo: el slice actual solo
-  mitiga fuerza bruta con error genérico, hash dummy y coste de scrypt.
+- **MUST** todo `POST /api/auth/login` pasa por el limitador de base de datos
+  (`registerLoginAttempt` de `src/lib/auth/rate-limit.ts`) antes de verificar
+  la contraseña, exista o no el email; bloqueado → `error=bloqueado` sin scrypt
+  ni cookie, y un fallo del limitador → `error=servicio` (falla cerrado).
+  Motivo: el login está expuesto en la demo pública y en serverless no vale un
+  limitador en memoria.
+- **MUST** `limites_login` es una tabla técnica global sin `empresa_id` que
+  solo guarda claves `email:<sha256>`/`ip:<sha256>` (CHECK
+  `limites_login_clave_hash`) y calcula el tiempo con `now()` en SQL. Motivo:
+  la identidad precede al tenant, no se guardan datos personales en claro y se
+  evita el desfase horario del adapter.
 
 ## Cliente Prisma y entorno
 
@@ -281,6 +289,30 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
 - **MUST** cualquier pipeline de instalación/build incluye devDependencies
   (el CLI `prisma` vive ahí y `postinstall` lo usa). Motivo: `npm ci --omit=dev`
   no puede generar el cliente Prisma y el build fallaría.
+
+## Demo pública (Vercel + Neon)
+
+Guía: `docs/operacion-demo.md`.
+
+- **MUST** la app en runtime usa solo `DATABASE_URL` (pooler de Neon) y el CLI
+  de Prisma usa `DATABASE_URL_UNPOOLED` (directa) si existe; no renombrar estas
+  dos variables. Motivo: las migraciones no deben pasar por el pooler y la
+  sesión principal configura exactamente esos nombres.
+- **MUST** las migraciones del despliegue solo corren en
+  `scripts/vercel-build.sh` con `VERCEL_ENV=production`; `vercel.json` ignora
+  los builds que no son de producción. Motivo: no hay previews ni bases por
+  rama y un preview no debe migrar la base de la demo.
+- **MUST NOT** configurar variables `SEED_*` en Vercel ni versionar `.env.demo`
+  (solo `.env.example` y `.env.demo.example`, sin valores reales). Motivo: las
+  contraseñas de presentación viven solo en local.
+- **MUST** los comandos `demo:*` pasan por `scripts/with-demo-env.sh`, que carga
+  solo el archivo de demo (`DEMO_ENV_FILE` o `.env.demo`) y nunca `.env`;
+  `demo:seed` rechaza `NODE_ENV=production` y contraseñas de menos de 12
+  caracteres o de ejemplo antes de conectar. Motivo: evitar sembrar la demo con
+  credenciales locales o la base local con las de la demo.
+- **MUST** un dato nuevo de presentación entra en `prisma/seed/presentacion.ts`
+  con clave natural de idempotencia y solo con estados que el dominio ya
+  permite. Motivo: `demo:seed` se ejecuta varias veces contra la misma base.
 
 ## Salud y verificación
 

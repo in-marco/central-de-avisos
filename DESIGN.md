@@ -142,6 +142,7 @@ Ninguna. En este entorno no hay herramienta de generación de imágenes disponib
 - **Inputs:** etiqueta siempre visible, ayuda breve, error inline; altura 44-48 px.
 - **Tarjeta de aviso:** prioridad, cliente, sede, antigüedad, descripción y acción principal. En móvil, toda la tarjeta es pulsable.
 - **Chip de prioridad:** Normal (neutro), Alta (warning), Urgente (danger).
+- **Franja de demo:** solo con `DEMO_MODE=true`; primer elemento visible de cada página, a todo el ancho, fondo `warning` con texto `text` (#121820, 4.75:1; el blanco sobre `warning` da 3.75:1 y no cumple AA a 14 px), 14 px semibold centrado, padding 8 px, `role="note"`, sin cerrar ni sticky. Texto fijo: «Entorno de demostración · datos ficticios».
 - **Resumen de horas:** inicio, fin, duración y ajuste; tipografía monoespaciada.
 - **Tabla de factura:** líneas, base, IVA y total; total destacado.
 - **Sello de firma:** indicador discreto de factura firmada con huella abreviada.

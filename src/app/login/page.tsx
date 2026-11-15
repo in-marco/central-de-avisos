@@ -14,7 +14,16 @@ const ERROR_MESSAGES: Record<string, string> = {
   credenciales: "Email o contraseña incorrectos.",
   servicio:
     "No se pudo completar el inicio de sesión. Inténtalo de nuevo en unos minutos.",
+  bloqueado: "Demasiados intentos. Espera unos minutos y vuelve a intentarlo.",
 };
+
+// `Object.hasOwn`: `?error=__proto__` o `constructor` no deben resolver
+// propiedades heredadas (regla de CONSTRAINTS.md).
+function loginErrorMessage(code: string | undefined): string | undefined {
+  return code && Object.hasOwn(ERROR_MESSAGES, code)
+    ? ERROR_MESSAGES[code]
+    : undefined;
+}
 
 type LoginSearchParams = Promise<{
   [key: string]: string | string[] | undefined;
@@ -37,7 +46,7 @@ export default async function LoginPage({
 
   const params = await searchParams;
   const errorCode = firstValue(params.error);
-  const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] : undefined;
+  const errorMessage = loginErrorMessage(errorCode);
   const next = safeNextPath(firstValue(params.next) ?? "/panel");
 
   return (

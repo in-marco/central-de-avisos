@@ -18,6 +18,9 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx prisma/seed.ts",
     "test:db": "prisma migrate deploy && vitest run --config vitest.db.config.ts",
+    "demo:status": "bash scripts/with-demo-env.sh npx prisma migrate status",
+    "demo:migrate": "bash scripts/with-demo-env.sh npx prisma migrate deploy",
+    "demo:seed": "bash scripts/with-demo-env.sh npx tsx prisma/seed-demo.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

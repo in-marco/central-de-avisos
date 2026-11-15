@@ -7,6 +7,27 @@ type GlobalWithDb = typeof globalThis & {
 
 const globalWithDb = globalThis as GlobalWithDb;
 
+export const DEFAULT_CONNECTION_TIMEOUT_MS = 2000;
+
+/**
+ * Timeout de conexión a PostgreSQL. `DATABASE_CONNECTION_TIMEOUT_MS` (entero
+ * entre 500 y 30000) permite tolerar el arranque en frío de Neon en la demo
+ * (10000); ausente o inválido, 2000 ms para fallar rápido.
+ */
+export function connectionTimeoutMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.DATABASE_CONNECTION_TIMEOUT_MS?.trim();
+
+  if (!raw || !/^\d+$/.test(raw)) {
+    return DEFAULT_CONNECTION_TIMEOUT_MS;
+  }
+
+  const value = Number(raw);
+
+  return value >= 500 && value <= 30_000 ? value : DEFAULT_CONNECTION_TIMEOUT_MS;
+}
+
 /**
  * Devuelve el cliente Prisma de forma perezosa. Importar este módulo no
  * requiere DATABASE_URL ni abre conexiones; eso permite que `next build`,
@@ -25,7 +46,7 @@ export function getDb(): PrismaClient {
     const adapter = new PrismaPg({
       connectionString: databaseUrl,
       // Falla rápido en lugar de quedarse colgado si PostgreSQL no responde.
-      connectionTimeoutMillis: 2000,
+      connectionTimeoutMillis: connectionTimeoutMs(),
     });
 
     globalWithDb.__centralDeAvisosDb = new PrismaClient({ adapter });

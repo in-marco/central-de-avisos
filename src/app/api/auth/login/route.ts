@@ -2,6 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getDb } from "@/db/client";
 import { isSameOrigin, isSecureRequest } from "@/lib/auth/origin";
 import { safeNextPath } from "@/lib/auth/redirect";
+import {
+  clearLoginAttemptsOnSuccess,
+  loginRateLimitWindowSeconds,
+  rateLimitKeys,
+  registerLoginAttempt,
+} from "@/lib/auth/rate-limit";
 import { authenticateCredentials } from "@/lib/auth/session";
 import {
   SESSION_COOKIE_NAME,
@@ -19,7 +25,7 @@ export function GET() {
 
 function loginErrorRedirect(
   request: NextRequest,
-  error: "credenciales" | "servicio",
+  error: "credenciales" | "servicio" | "bloqueado",
   next: string,
 ) {
   const url = new URL("/login", request.url);
@@ -44,6 +50,24 @@ export async function POST(request: NextRequest) {
   const password = formData.get("password");
   const next = safeNextPath(formData.get("next"));
 
+  // Límite durable de intentos antes de verificar la contraseña (también con
+  // email ausente o vacío). Si el limitador falla, el login falla cerrado.
+  const keys = rateLimitKeys(email, request.headers);
+  try {
+    const attempt = await registerLoginAttempt(
+      getDb(),
+      keys,
+      loginRateLimitWindowSeconds(),
+    );
+
+    if (attempt.bloqueado) {
+      // Sin scrypt ni cookie; mismo mensaje exista o no el email.
+      return loginErrorRedirect(request, "bloqueado", next);
+    }
+  } catch {
+    return loginErrorRedirect(request, "servicio", next);
+  }
+
   if (typeof email !== "string" || typeof password !== "string") {
     return loginErrorRedirect(request, "credenciales", next);
   }
@@ -63,6 +87,12 @@ export async function POST(request: NextRequest) {
     // Mensaje genérico: no revela si el email existe, si falta contraseña o si
     // el usuario/empresa está bloqueado.
     return loginErrorRedirect(request, "credenciales", next);
+  }
+
+  try {
+    await clearLoginAttemptsOnSuccess(getDb(), keys);
+  } catch {
+    // La sesión ya es válida: un fallo al limpiar el contador no la invalida.
   }
 
   const response = NextResponse.redirect(new URL(next, request.url), 303);
