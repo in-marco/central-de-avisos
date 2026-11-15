@@ -130,7 +130,8 @@ npm run dev
 - Avisos: `http://localhost:3000/panel/avisos`, `/panel/avisos/nuevo` y
   `/panel/avisos/<id>` (permiso `avisos.crear`: `ADMINISTRADOR` y `OFICINA`;
   técnico, usuario de cliente y superadmin reciben 403; un aviso de otra
-  empresa, 404)
+  empresa, 404). Vistas `?vista=por-validar`, `bolsa` (bolsa de pendientes) y
+  `cancelados`; sin `vista`, todos
 - Portal de cliente: `http://localhost:3000/portal` y `/portal/sedes/<id>`
   (solo usuarios de cliente; empresa y superadmin reciben 403; una sede fuera
   de su cliente, 403 uniforme sin datos)
@@ -164,6 +165,10 @@ configuración fiscal, serie, tarifa horaria y modo NO-VERIFACTU en
 clientes, sedes y contactos en `/panel/clientes` (`POST /api/panel/clientes`,
 `/datos`, `/sedes` y `/contactos`) y registran avisos en `/panel/avisos`
 (`POST /api/panel/avisos`; el aviso nace `NUEVO` con origen `OFICINA`).
+Desde el detalle del aviso validan un `NUEVO` (pasa a `PENDIENTE` y entra en la
+bolsa; `POST /api/panel/avisos/validar`) o cancelan un `NUEVO`/`PENDIENTE` con
+motivo y confirmación (`POST /api/panel/avisos/cancelar`); ambos usan el
+permiso `avisos.validar`.
 También invitan a un contacto con email al portal de cliente desde su ficha
 (`POST /api/panel/clientes/portal`, cookie flash `central_invitacion_portal`
 de 60 s; «Generar nuevo enlace» caduca el anterior). El contacto activa su

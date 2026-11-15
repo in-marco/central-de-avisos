@@ -141,6 +141,137 @@ export function parseNuevoAvisoFields(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Validación, cancelación y vistas del listado (aviso-validation-pool).       */
+/* -------------------------------------------------------------------------- */
+
+export const MOTIVO_CANCELACION_MAX_LENGTH = 500;
+
+/** Estados desde los que la oficina puede cancelar un aviso. */
+export const ESTADOS_CANCELABLES = ["NUEVO", "PENDIENTE"] as const satisfies readonly Estado[];
+
+export function isEstadoCancelable(estado: Estado): boolean {
+  return (ESTADOS_CANCELABLES as readonly Estado[]).includes(estado);
+}
+
+/**
+ * Códigos de error de las acciones de validar y cancelar:
+ * - `no-encontrado`: `avisoId` vacío, no UUID, inexistente o de otra empresa.
+ * - `estado`: el aviso no está en un estado de origen permitido.
+ * - `incompleto`: el aviso tiene problemas que impiden validarlo.
+ * - `motivo`: motivo vacío, de solo espacios o de más de 500 caracteres.
+ * - `confirmacion`: falta la casilla de confirmación de la cancelación.
+ */
+export type AvisoAccionError =
+  | "no-encontrado"
+  | "estado"
+  | "incompleto"
+  | "motivo"
+  | "confirmacion";
+
+export type AccionParseResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: AvisoAccionError };
+
+/** `avisoId` del formulario de validación. */
+export function parseAvisoIdForm(formData: FormData): AccionParseResult<{ avisoId: string }> {
+  const avisoId = normalizeUuid(formString(formData, "avisoId"));
+  return avisoId ? { ok: true, value: { avisoId } } : { ok: false, error: "no-encontrado" };
+}
+
+/**
+ * Motivo recortado en los extremos y con saltos de línea normalizados a `\n`.
+ * `null` si queda vacío o supera `MOTIVO_CANCELACION_MAX_LENGTH`.
+ */
+export function normalizeMotivo(value: string): string | null {
+  const normalized = value.replace(/\r\n?/g, "\n").trim();
+
+  if (normalized.length === 0 || normalized.length > MOTIVO_CANCELACION_MAX_LENGTH) {
+    return null;
+  }
+
+  return normalized;
+}
+
+export type CancelacionValues = { avisoId: string; motivo: string };
+
+export function parseCancelacionFields(input: {
+  avisoId: string;
+  motivo: string;
+  confirmar: string;
+}): AccionParseResult<CancelacionValues> {
+  const avisoId = normalizeUuid(input.avisoId);
+
+  if (!avisoId) {
+    return { ok: false, error: "no-encontrado" };
+  }
+
+  const motivo = normalizeMotivo(input.motivo);
+
+  if (motivo === null) {
+    return { ok: false, error: "motivo" };
+  }
+
+  if (input.confirmar !== "si") {
+    return { ok: false, error: "confirmacion" };
+  }
+
+  return { ok: true, value: { avisoId, motivo } };
+}
+
+/** Formulario de cancelación: `avisoId`, `motivo` y `confirmar=si`. */
+export function parseCancelacionForm(formData: FormData): AccionParseResult<CancelacionValues> {
+  return parseCancelacionFields({
+    avisoId: formString(formData, "avisoId"),
+    motivo: formString(formData, "motivo"),
+    confirmar: formString(formData, "confirmar"),
+  });
+}
+
+/**
+ * Problemas que impiden validar un aviso. Hoy todos los campos del aviso son
+ * obligatorios en la base de datos, así que el único caso alcanzable es:
+ * - `contacto-sede`: el contacto se vinculó después a otra sede, así que ya
+ *   no es de todo el cliente ni de la sede del aviso.
+ * Pensada para ampliarse (p. ej. avisos de cliente con contacto opcional).
+ */
+export type ProblemaValidacion = "contacto-sede";
+
+export function problemasParaValidar(aviso: {
+  sedeId: string;
+  contacto: { sedeId: string | null };
+}): ProblemaValidacion[] {
+  const problemas: ProblemaValidacion[] = [];
+
+  if (aviso.contacto.sedeId !== null && aviso.contacto.sedeId !== aviso.sedeId) {
+    problemas.push("contacto-sede");
+  }
+
+  return problemas;
+}
+
+export const PROBLEMA_VALIDACION_LABELS: Record<ProblemaValidacion, string> = {
+  "contacto-sede": "el contacto ya no es de todo el cliente ni de la sede del aviso",
+};
+
+/** Vistas del listado `/panel/avisos`. */
+export const VISTAS = ["todos", "por-validar", "bolsa", "cancelados"] as const;
+export type Vista = (typeof VISTAS)[number];
+
+export const VISTA_LABELS: Record<Vista, string> = {
+  todos: "Todos",
+  "por-validar": "Por validar",
+  bolsa: "En bolsa",
+  cancelados: "Cancelados",
+};
+
+const VISTAS_SET: ReadonlySet<string> = new Set(VISTAS);
+
+/** Vista del parámetro `?vista=`; cualquier valor desconocido es `todos`. */
+export function parseVista(value: string | undefined): Vista {
+  return value !== undefined && VISTAS_SET.has(value) ? (value as Vista) : "todos";
+}
+
 export function parseNuevoAvisoForm(formData: FormData): ParseResult<NuevoAvisoValues> {
   return parseNuevoAvisoFields({
     clienteId: formString(formData, "clienteId"),

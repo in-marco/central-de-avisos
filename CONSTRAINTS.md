@@ -102,6 +102,19 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   oficina escribe `OFICINA` y `NUEVO`. Las transiciones de estado solo se
   hacen en las features que las definen. Motivo: el ciclo de vida del aviso no
   debe poder saltarse desde una petición manipulada.
+- **MUST** toda transición de estado del aviso se hace en
+  `src/lib/avisos/avisos.ts` con `updateMany` condicionado al estado de origen
+  (y a `tenantFilter`), comprobando `count`, y fija en servidor el autor (de la
+  sesión) y la fecha. Motivo: dos peticiones concurrentes no deben escribir dos
+  veces ni pisar el estado que dejó la otra (hallazgo de
+  `aviso-validation-pool`).
+- **MUST** la validación de un aviso recalcula `problemasParaValidar` en el
+  servidor en el momento de validar; el aviso de la página es solo informativo.
+  Motivo: los datos del cliente (p. ej. la sede de un contacto) pueden cambiar
+  después del alta.
+- **MUST** la cancelación de un aviso exige un motivo no vacío (máx. 500
+  caracteres, recortado) y la casilla de confirmación, y deja `cancelado_en` y
+  `cancelado_por_id`. Motivo: debe quedar constancia de por qué no se ejecuta.
 - **MUST** los mensajes de `?error=`/`?ok=` de páginas nuevas se buscan con
   `Object.hasOwn` (o un `Map`), nunca indexando un objeto literal. Motivo:
   `?error=__proto__` o `constructor` resuelven propiedades heredadas y
@@ -218,9 +231,15 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$`, tarifa horaria de empresa `> 0`, NIF
   de cliente normalizado, tarifa de cliente no negativa, contacto con teléfono
   o email, email de contacto normalizado, descripción de aviso no vacía
-  `avisos_descripcion_no_vacia`, usuario de cliente coherente y contacto que
-  requiere cliente) se mantienen en SQL y se cubren con
-  `npm run test:db` al cambiar el esquema. Motivo: Prisma no los regenera.
+  `avisos_descripcion_no_vacia`, usuario de cliente coherente, contacto que
+  requiere cliente, `avisos_validacion_coherente`,
+  `avisos_cancelacion_coherente` y `avisos_motivo_cancelacion_no_vacio`) se
+  mantienen en SQL y se cubren con `npm run test:db` al cambiar el esquema.
+  Motivo: Prisma no los regenera.
+- **MUST NOT** añadir CHECK que comparen fechas escritas por la aplicación
+  (`new Date()`) con columnas que toman el default `now()` de la base de datos
+  (p. ej. `validado_en >= creado_en`). Motivo: en local se observa un desfase
+  de una hora entre ambas (Session 013) y el CHECK fallaría con datos válidos.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
 - **MUST** solo un usuario `es_superadmin = true` puede tener `empresa_id`

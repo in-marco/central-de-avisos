@@ -114,6 +114,25 @@ expect_redirect() {
   echo "OK   GET $path -> $code $location"
 }
 
+# POST que debe redirigir: comprueba el código y que el Location (sin origen)
+# empiece por el prefijo esperado. Los argumentos extra van a curl.
+expect_post_redirect() {
+  local path="$1"
+  local expected_code="$2"
+  local expected_prefix="$3"
+  shift 3
+  local out code location
+  out="$(curl -s -o /dev/null -w "%{http_code} %{redirect_url}" --max-time 10 -X POST "$@" "${BASE_URL}${path}")"
+  code="${out%% *}"
+  location="${out#* }"
+  location="${location#"${BASE_URL}"}"
+  location="${location#http://localhost:${PORT}}"
+  if [[ "$code" != "$expected_code" || "$location" != "$expected_prefix"* ]]; then
+    fail "POST $path: esperado $expected_code -> ${expected_prefix}*, recibido $code -> $location"
+  fi
+  echo "OK   POST $path -> $code $location"
+}
+
 expect_json_status_ok() {
   local body
   body="$(curl -fsS --max-time 10 "${BASE_URL}/health")" || fail "GET /health no respondió 2xx"
@@ -213,6 +232,15 @@ expect_status GET /api/panel/avisos 405
 expect_status POST /api/panel/avisos 403 -H "Origin: http://evil.example"
 expect_status POST /api/panel/avisos 307 -H "Origin: ${BASE_URL}"
 
+# Validar y cancelar avisos sin sesión (aviso-validation-pool): solo POST,
+# mismo origen y anónimo al login con next=/panel/avisos. No escribe.
+for accion in validar cancelar; do
+  expect_status GET "/api/panel/avisos/${accion}" 405
+  expect_status POST "/api/panel/avisos/${accion}" 403 -H "Origin: http://evil.example"
+  expect_post_redirect "/api/panel/avisos/${accion}" 307 "/login?next=%2Fpanel%2Favisos" \
+    -H "Origin: ${BASE_URL}"
+done
+
 # Franja de demo (demo-deployment). SMOKE_EXPECT_DEMO_BANNER=1 exige la franja
 # en / y /login; =0 exige que no aparezca. Sin la variable no se comprueba.
 if [[ -n "${SMOKE_EXPECT_DEMO_BANNER:-}" ]]; then
@@ -265,18 +293,33 @@ fi
 # Avisos con sesión (permiso avisos.crear). Con 200 comprueba las tres
 # páginas (un id inexistente da el 404 propio); con 403, páginas y POST.
 # Nunca envía un POST válido, así que no crea avisos.
+# Validar y cancelar (permiso avisos.validar, mismos roles que avisos.crear):
+# con 200, la vista «En bolsa» responde y un avisoId inexistente vuelve al
+# listado con no-encontrado sin escribir; con 403, los dos POST dan 403.
 check_avisos_access() {
   local jar="$1"
   local status="$2"
+  local missing="00000000-0000-4000-8000-000000000000"
 
   expect_status GET /panel/avisos "$status" -b "$jar"
   expect_status GET /panel/avisos/nuevo "$status" -b "$jar"
+  expect_status GET "/panel/avisos?vista=bolsa" "$status" -b "$jar"
   if [[ "$status" == "200" ]]; then
-    expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 404 -b "$jar"
+    expect_status GET "/panel/avisos/${missing}" 404 -b "$jar"
     expect_status GET /panel/avisos/no-es-uuid 404 -b "$jar"
+    expect_post_redirect /api/panel/avisos/validar 303 "/panel/avisos?error=no-encontrado" \
+      -b "$jar" -H "Origin: ${BASE_URL}" --data-urlencode "avisoId=${missing}"
+    expect_post_redirect /api/panel/avisos/cancelar 303 "/panel/avisos?error=no-encontrado" \
+      -b "$jar" -H "Origin: ${BASE_URL}" --data-urlencode "avisoId=${missing}" \
+      --data-urlencode "motivo=Smoke" --data-urlencode "confirmar=si"
   else
-    expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 "$status" -b "$jar"
+    expect_status GET "/panel/avisos/${missing}" "$status" -b "$jar"
     expect_status POST /api/panel/avisos 403 -b "$jar" -H "Origin: ${BASE_URL}"
+    expect_status POST /api/panel/avisos/validar 403 -b "$jar" -H "Origin: ${BASE_URL}" \
+      --data-urlencode "avisoId=${missing}"
+    expect_status POST /api/panel/avisos/cancelar 403 -b "$jar" -H "Origin: ${BASE_URL}" \
+      --data-urlencode "avisoId=${missing}" --data-urlencode "motivo=Smoke" \
+      --data-urlencode "confirmar=si"
   fi
 }
 

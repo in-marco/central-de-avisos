@@ -165,8 +165,9 @@
   validación nativa del navegador (`required`, `maxLength`) evita la mayoría
   de los casos.
 - **Listado de avisos sin paginación ni filtros:** `/panel/avisos` carga todos
-  los avisos de la empresa. Aceptable para la demo; los filtros por estado,
-  cliente y técnico llegan con el panel de oficina.
+  los avisos de la empresa (o los de una vista por estado: por validar, en
+  bolsa, cancelados). Aceptable para la demo; búsqueda, paginación y filtros
+  por cliente y técnico llegan con el panel de oficina.
 - **Contacto de la sede del aviso validado solo en la aplicación:** los FK
   compuestos garantizan que cliente, sede y contacto son de la misma empresa y
   del mismo cliente, pero que el contacto sea de todo el cliente o de la sede
@@ -196,6 +197,24 @@
 - **Invitaciones y accesos de portal sin auditoría:** invitar, generar un
   enlace nuevo y aceptar no dejan registro append-only (solo filas de
   `invitaciones`). Mitigación: queda en `audit-trail-view`.
+- **Validación y cancelación sin auditoría append-only:** el aviso guarda quién
+  y cuándo lo validó o canceló y el motivo, pero no hay registro de auditoría
+  ni historial de cambios. Mitigación: queda en `audit-trail-view`.
+- **Un contacto editado tras validar no invalida el aviso:** la coherencia
+  contacto/sede solo se comprueba al validar; si después se vincula el
+  contacto a otra sede, el aviso `PENDIENTE` sigue en la bolsa. Revisar si
+  `technician-inbox` o la asignación deben avisarlo.
+- **`demo:seed` no devuelve a `NUEVO` los avisos de la demo:** el seed de
+  presentación actualiza avisos existentes sin tocar `estado`; los que se
+  validen o cancelen en la demo pública siguen así hasta un reset (ver
+  `docs/operacion-demo.md`).
+- **Autor de validación y cancelación con FK simple:** `validado_por_id` y
+  `cancelado_por_id` apuntan a `usuarios(id)` sin `empresa_id`; que el usuario
+  sea de la misma empresa lo garantiza la sesión en el repositorio, no
+  PostgreSQL. Mitigación: escribir transiciones solo vía
+  `src/lib/avisos/avisos.ts`.
+- **Cancelar avisos asignados o en curso, reabrir y validar en el alta:**
+  fuera del MVP actual; se decidirán con asignación y partes.
 
 ## Research Tasks
 

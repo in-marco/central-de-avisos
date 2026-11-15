@@ -8,7 +8,8 @@ combinables con gestión en `/panel/usuarios`, configuración fiscal y de
 facturación de la empresa en `/panel/empresa`, un panel de superadmin para
 planes, alta de empresas e invitación de su administrador, y la primera parte
 del dominio operativo: clientes con sedes y contactos en `/panel/clientes` y
-alta de avisos desde oficina en `/panel/avisos`. La oficina puede invitar a un
+alta de avisos desde oficina en `/panel/avisos`, con validación, cancelación y
+bolsa de pendientes. La oficina puede invitar a un
 contacto al portal de cliente de solo lectura (`/portal`), que muestra los
 datos y las sedes de su cliente.
 
@@ -22,7 +23,8 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles, configuración
   │    │                      de facturación), con tenantFilter o requireEmpresaId
   │    ├─ src/lib/clientes/   clientes, sedes y contactos (validación pura y repositorio con tenantFilter)
-  │    ├─ src/lib/avisos/     avisos: validación pura del alta y repositorio con tenantFilter
+  │    ├─ src/lib/avisos/     avisos: validación pura (alta, cancelación, vistas) y repositorio
+  │    │                      con tenantFilter (alta, transiciones con updateMany condicionado, bolsa)
   │    ├─ src/lib/portal/     portal de cliente: contrato de alcance (scope, puro), guard,
   │    │                      lecturas con clienteFilter e invitaciones de contactos
   │    ├─ src/lib/onboarding/ activación de invitaciones (administrador y contacto)
@@ -136,6 +138,8 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   el solapamiento de `cliente_id` porque todas las columnas son obligatorias.
   Que el contacto sea de todo el cliente o de la sede del aviso no cabe en un
   FK: lo aplica `src/lib/avisos/avisos.ts`. No hay número correlativo.
+  La migración `20261115130000_avisos_validacion` añade los datos de
+  validación y cancelación (ver «Validación de avisos y bolsa de pendientes»).
 - **Facturación:** la futura factura de trabajo (`invoice-draft`) tendrá FK
   `cliente_id` (y `empresa_id`), nunca `sede_id`; razón social, NIF y dirección
   de facturación se toman del cliente. La sede solo aparece como lugar de la
@@ -311,9 +315,46 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   resuelve cliente, sede del cliente y contacto del cliente de todo el cliente
   o de la sede elegida, y escribe `origen=OFICINA`, `estado=NUEVO` y
   `creado_por_id` de la sesión en una transacción).
-- Las transiciones de estado (validar, bolsa, asignar, tomar, cancelar),
-  la edición y el alta desde el portal de cliente pertenecen a features
-  posteriores.
+- Asignar, tomar, la edición y el alta desde el portal de cliente pertenecen a
+  features posteriores.
+
+## Validación de avisos y bolsa de pendientes
+
+- **Transiciones:** `NUEVO → PENDIENTE` (validar: entra en la bolsa) y
+  `NUEVO | PENDIENTE → CANCELADO` (cancelar con motivo). Las hace solo
+  `src/lib/avisos/avisos.ts` (`validarAvisoInTransaction` / `validarAviso`,
+  `cancelarAvisoInTransaction` / `cancelarAviso`): resuelven el aviso con
+  `tenantFilter` (ajeno = `no-encontrado`), comprueban el estado de origen y
+  escriben con `updateMany` condicionado a ese estado (`count 0` → `estado`), así
+  que dos peticiones concurrentes nunca escriben dos veces. Autor
+  (`validado_por_id`, `cancelado_por_id`) y fecha salen de la sesión y del
+  servidor. La validación recalcula `problemasParaValidar` (puro, en
+  `validation.ts`; hoy solo `contacto-sede`: el contacto se vinculó después a
+  otra sede) y responde `incompleto` sin escribir. Cancelar un `PENDIENTE`
+  conserva su validación.
+- **Columnas** (migración `20261115130000_avisos_validacion`): `validado_en`,
+  `validado_por_id`, `cancelado_en`, `cancelado_por_id` y `motivo_cancelacion`,
+  nullables; FK simples `Restrict` a `usuarios` (la empresa la garantiza la
+  sesión); índice `(empresa_id, estado)`; CHECK `avisos_validacion_coherente`,
+  `avisos_cancelacion_coherente` y `avisos_motivo_cancelacion_no_vacio`.
+  Relaciones con nombre en Prisma (`AvisoCreadoPor`, `AvisoValidadoPor`,
+  `AvisoCanceladoPor`).
+- **Route handlers:** `POST /api/panel/avisos/validar` y
+  `POST /api/panel/avisos/cancelar` (`GET` → 405), mismo origen y
+  `authorizeCompanyRequest("avisos.validar", "/panel/avisos")` (cancelar usa el
+  mismo permiso). Éxito → `/panel/avisos/<id>?ok=validado|cancelado`; error con
+  aviso de la empresa → detalle con `?error=incompleto|estado|motivo|confirmacion`;
+  aviso vacío, no UUID, inexistente o ajeno → `/panel/avisos?error=no-encontrado`;
+  excepción → `?error=servicio`.
+- **Páginas:** `/panel/avisos?vista=todos|por-validar|bolsa|cancelados`
+  (`parseVista` con `Set`, desconocido = `todos`; pestañas como `nav` de
+  enlaces con `aria-current` y recuentos de `countAvisosPorVista`). `bolsa` y
+  `por-validar` ordenan por prioridad (`URGENTE`, `ALTA`, `NORMAL`: orden del
+  enum en PostgreSQL) y antigüedad; `todos` y `cancelados`, del más reciente al
+  más antiguo. El detalle añade la sección «Validación y bolsa» y la tarjeta de
+  cancelación (solo con `avisos.validar`).
+- **Reutilización:** `listBolsa(db, empresaId)` es el punto de entrada de la
+  bolsa para `technician-inbox`.
 
 ## Portal de cliente
 
@@ -489,7 +530,9 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
   fiscales, CHECK, FK compuestos, alta con rollback, NIF duplicado por empresa,
   sede de otro cliente y aislamiento A/B), avisos (enums, CHECK, FK
   compuestos, alta en las tres prioridades con `origen`/`estado` fijos, sede y
-  contacto que no encajan, listado, detalle y aislamiento A/B) y portal de
+  contacto que no encajan, listado, detalle y aislamiento A/B; validación y
+  cancelación con CHECK de coherencia, incompleto, estado, orden de la bolsa,
+  recuentos y concurrencia real con un solo ganador) y portal de
   cliente (CHECK, FK y UNIQUE de usuarios de cliente, invitación y rechazos
   con BD sin cambios, enlace nuevo, carrera de email, aceptación con destino
   `/portal`, sesión con cliente y aislamiento C1/C2 de la misma empresa y A/B).

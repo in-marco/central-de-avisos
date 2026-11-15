@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { avisoError, avisoOkMessage, formatFecha, resumenDescripcion } from "./mensajes";
+import {
+  avisoAccionError,
+  avisoError,
+  avisoListadoError,
+  avisoOkMessage,
+  formatFecha,
+  resumenDescripcion,
+} from "./mensajes";
 
 describe("mensajes de avisos", () => {
   it("resuelve los códigos conocidos con su campo", () => {
@@ -11,11 +18,30 @@ describe("mensajes de avisos", () => {
     expect(avisoOkMessage("creado")).toBe("Aviso creado.");
   });
 
+  it("resuelve los mensajes de validar y cancelar", () => {
+    expect(avisoOkMessage("validado")).toBe("Aviso validado y publicado en la bolsa.");
+    expect(avisoOkMessage("cancelado")).toBe("Aviso cancelado.");
+    expect(avisoAccionError("incompleto")?.summary).toMatch(/^No se puede validar: el contacto/);
+    expect(avisoAccionError("estado")?.summary).toBe(
+      "El aviso ya no está en un estado que permita esta acción. Revisa su estado actual.",
+    );
+    expect(avisoAccionError("motivo")?.field).toBe("motivo");
+    expect(avisoAccionError("confirmacion")?.field).toBe("confirmacion");
+    expect(avisoAccionError("servicio")?.field).toBeUndefined();
+    expect(avisoListadoError("no-encontrado")).toMatch(/aviso/);
+    expect(avisoListadoError("servicio")).toBeDefined();
+    // Los códigos de una página no se resuelven en la otra.
+    expect(avisoListadoError("incompleto")).toBeUndefined();
+    expect(avisoAccionError("no-encontrado")).toBeUndefined();
+  });
+
   it.each(["__proto__", "constructor", "toString", "hasOwnProperty", "x", ""])(
     "ignora el código %j sin resolver propiedades heredadas",
     (code) => {
       expect(avisoError(code)).toBeUndefined();
       expect(avisoOkMessage(code)).toBeUndefined();
+      expect(avisoAccionError(code)).toBeUndefined();
+      expect(avisoListadoError(code)).toBeUndefined();
     },
   );
 

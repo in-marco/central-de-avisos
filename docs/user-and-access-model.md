@@ -132,6 +132,14 @@ Notas:
   cliente o aviso de otra empresa se trata como inexistente. El origen
   (`OFICINA`) y el estado (`NUEVO`) los fija el servidor. La parte de Cliente
   («Sí, de sus sedes») llegará con `client-aviso-creation`.
+- «Validar aviso y poner en bolsa» (permiso `avisos.validar`, Administrador y
+  Oficina y sus combinaciones): ven en el detalle del aviso las acciones de
+  validar y cancelar y usan `POST /api/panel/avisos/validar` y
+  `POST /api/panel/avisos/cancelar`. Cancelar usa también `avisos.validar`: la
+  matriz no tiene una fila propia y es la misma decisión de oficina. Técnico,
+  usuario sin roles, usuario de cliente y superadmin reciben 403; un anónimo va
+  al login. Quien valida o cancela sale de la sesión; un aviso de otra empresa
+  se trata como inexistente. El técnico verá la bolsa con `technician-inbox`.
 - **Usuario de cliente (portal, `client-portal-invitation`).** Administrador y
   oficina (`clientes.gestionar`) invitan a un contacto con email desde la ficha
   del cliente. Se crea un usuario `INACTIVO` sin contraseña ligado a su

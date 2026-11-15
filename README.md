@@ -235,16 +235,28 @@ Técnico) registran los avisos que comunican los clientes en `/panel/avisos`:
   elegida), la descripción de la avería (hasta 2000 caracteres) y la prioridad
   (Normal, Alta o Urgente; Normal por defecto). El aviso nace en estado
   «Nuevo» con origen «Oficina» y guarda quién lo creó.
-- **Listado** (`/panel/avisos`): del más reciente al más antiguo, con
-  prioridad, estado, cliente, sede, inicio de la descripción y fecha (hora de
-  Madrid).
+- **Listado** (`/panel/avisos`): con prioridad, estado, cliente, sede, inicio
+  de la descripción y fecha (hora de Madrid). Pestañas con recuento: «Todos»
+  (por defecto, del más reciente al más antiguo), «Por validar»
+  (`?vista=por-validar`, avisos Nuevo), «En bolsa» (`?vista=bolsa`, avisos
+  Pendiente) y «Cancelados» (`?vista=cancelados`, del más reciente al más
+  antiguo). «Por validar» y «En bolsa» se ordenan por prioridad (Urgente, Alta,
+  Normal) y después por antigüedad.
 - **Detalle** (`/panel/avisos/<id>`): estado, prioridad, origen, cliente
   (enlace a su ficha), sede, contacto, descripción completa, autor y fecha.
+- **Validar y cancelar** (permiso `avisos.validar`, administrador y oficina):
+  desde el detalle, «Validar y publicar en la bolsa» pasa un aviso Nuevo a
+  Pendiente (`POST /api/panel/avisos/validar`) y guarda quién y cuándo. Si el
+  contacto del aviso se vinculó después a otra sede, el detalle lo avisa y la
+  validación se rechaza hasta corregirlo en la ficha del cliente. «Cancelar
+  aviso» (Nuevo o Pendiente) exige motivo (hasta 500 caracteres) y marcar la
+  confirmación (`POST /api/panel/avisos/cancelar`); el detalle muestra después
+  el motivo, quién y cuándo.
 - Un aviso o cliente de otra empresa se trata como inexistente. Técnico,
   usuario sin roles, usuario de cliente y superadmin reciben 403.
-- Fuera de este slice: validar, poner en bolsa, asignar, cancelar o editar
-  avisos, número de aviso, filtros y paginación, y alta desde el portal de
-  cliente.
+- Fuera de este slice: asignar, tomar o editar avisos, cancelar avisos
+  asignados o en curso, reabrir cancelados, número de aviso, búsqueda y
+  paginación, y alta desde el portal de cliente.
 
 ## Portal de cliente
 
@@ -364,7 +376,8 @@ configuración de facturación (columnas, enum, CHECK de serie y tarifa,
 normalización, NIF duplicado y aislamiento) y clientes (CHECK, FK compuestos,
 alta con rollback, NIF por empresa, sede de otro cliente y aislamiento entre
 empresas), avisos (enums, CHECK, FK compuestos, alta con `origen`/`estado`
-fijos, sede y contacto que no encajan, listado, detalle y aislamiento) y
+fijos, sede y contacto que no encajan, listado, detalle, aislamiento,
+validación y cancelación con sus CHECK, orden de la bolsa y concurrencia) y
 portal de cliente (CHECK, FK y UNIQUE de usuarios de cliente, invitación,
 rechazos, enlace nuevo, aceptación y aislamiento entre clientes de la misma
 empresa y entre empresas).
@@ -407,7 +420,8 @@ comprueba la franja de demo y `SMOKE_RATE_LIMIT=1` el bloqueo del login.
   `requirePortalSession`, lecturas del portal e invitaciones de contactos.
 - `src/lib/clientes/` — validación pura y repositorio de clientes, sedes y
   contactos con `tenantFilter`.
-- `src/app/api/panel/avisos/` — `POST` de alta de aviso.
+- `src/app/api/panel/avisos/` — `POST` de alta de aviso, `validar/` y
+  `cancelar/`.
 - `src/lib/avisos/` — validación pura y repositorio de avisos con
   `tenantFilter`.
 - `src/lib/authz/` — matriz de permisos, navegación y guards
