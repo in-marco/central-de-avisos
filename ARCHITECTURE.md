@@ -7,7 +7,8 @@ revocables, un panel privado con navegación por permisos, roles de empresa
 combinables con gestión en `/panel/usuarios`, configuración fiscal y de
 facturación de la empresa en `/panel/empresa`, un panel de superadmin para
 planes, alta de empresas e invitación de su administrador, y la primera parte
-del dominio operativo: clientes con sedes y contactos en `/panel/clientes`.
+del dominio operativo: clientes con sedes y contactos en `/panel/clientes` y
+alta de avisos desde oficina en `/panel/avisos`.
 
 ## Capas y dirección de dependencias
 
@@ -19,6 +20,7 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   │    ├─ src/lib/empresa/    gestión de la propia empresa (usuarios y roles, configuración
   │    │                      de facturación), con tenantFilter o requireEmpresaId
   │    ├─ src/lib/clientes/   clientes, sedes y contactos (validación pura y repositorio con tenantFilter)
+  │    ├─ src/lib/avisos/     avisos: validación pura del alta y repositorio con tenantFilter
   │    └─ src/lib/superadmin/ autorización, planes, altas e invitaciones
   └─ src/db/      acceso a datos y contrato de tenant
        └─ src/generated/prisma/ cliente Prisma generado (no versionado)
@@ -105,6 +107,20 @@ src/app/          rutas HTTP y páginas (borde de entrada)
   `sedes(id)` y la regla «la sede es del mismo cliente» se aplica en
   `upsertContacto` y se cubre con `test:db`. Añadir el FK compuesto solo en SQL
   haría que `prisma migrate diff` lo marcara como deriva.
+- `avisos` (migración `20261115090000_avisos`): `empresa_id`, `cliente_id`,
+  `sede_id`, `contacto_id` y `creado_por_id` NOT NULL, `descripcion text`,
+  enums `prioridad_aviso` (`NORMAL` por defecto, `ALTA`, `URGENTE`),
+  `origen_aviso` (`OFICINA`, `CLIENTE`) y `estado_aviso` completo (`NUEVO` por
+  defecto, `PENDIENTE`, `ASIGNADO`, `EN_CURSO`, `RESUELTO`, `FACTURADO`,
+  `CANCELADO`). FK compuestos `Restrict` `(cliente_id, empresa_id) →
+  clientes(id, empresa_id)`, `(sede_id, cliente_id) → sedes(id, cliente_id)` y
+  `(contacto_id, cliente_id) → contactos(id, cliente_id)` (la migración añade
+  `UNIQUE (id, cliente_id)` en `contactos`), más FK simples a `empresas` y
+  `usuarios`. CHECK `avisos_descripcion_no_vacia` e índices `(empresa_id,
+  creado_en)`, `cliente_id`, `sede_id` y `contacto_id`. Aquí Prisma sí admite
+  el solapamiento de `cliente_id` porque todas las columnas son obligatorias.
+  Que el contacto sea de todo el cliente o de la sede del aviso no cabe en un
+  FK: lo aplica `src/lib/avisos/avisos.ts`. No hay número correlativo.
 - **Facturación:** la futura factura de trabajo (`invoice-draft`) tendrá FK
   `cliente_id` (y `empresa_id`), nunca `sede_id`; razón social, NIF y dirección
   de facturación se toman del cliente. La sede solo aparece como lugar de la
@@ -247,6 +263,38 @@ motivo y el riesgo residual están en `CONSTRAINTS.md` y
   transaccional cliente + sede + contacto; `P2002` → `nif-duplicado`). Las
   ediciones son «última escritura gana». No hay borrado ni desactivación.
 
+## Avisos (alta desde oficina)
+
+- **Permiso:** `avisos.crear` (Administrador y Oficina, también combinados con
+  Técnico). Navegación «Avisos» justo después de «Inicio»; técnico, usuario sin
+  roles y superadmin reciben 403.
+- **Páginas** (`force-dynamic`, `requirePermission("avisos.crear")`):
+  `/panel/avisos` (tabla en escritorio con scroll horizontal controlado,
+  tarjetas pulsables en móvil, del más reciente al más antiguo, estado vacío),
+  `/panel/avisos/nuevo` (sin JavaScript de cliente: paso 1 `GET` con el
+  `select` de clientes; paso 2 con `?clienteId=`, sede, contacto, descripción
+  y prioridad) y `/panel/avisos/[id]` (detalle con su `not-found.tsx`). Un
+  `clienteId` vacío, inválido o ajeno en la página redirige a
+  `/panel/avisos/nuevo?error=no-encontrado`; un aviso ajeno, inexistente o no
+  UUID da el 404 propio. Los mensajes `?error=`/`?ok=` se buscan con
+  `Object.hasOwn`. Chips de prioridad y estado en
+  `src/app/panel/avisos/_components/chips.tsx`; fechas en Europe/Madrid.
+- **Route handler:** `POST /api/panel/avisos` (`GET` → 405 `Allow: POST`):
+  mismo origen, `authorizeCompanyRequest("avisos.crear")`, 303 a
+  `/panel/avisos/<id>?ok=creado`; errores con cliente de la empresa a
+  `/panel/avisos/nuevo?clienteId=<id>&error=sede|contacto|descripcion|prioridad`;
+  cliente inválido o ajeno a `?error=no-encontrado`; excepción a
+  `?error=servicio`.
+- **Lógica:** `src/lib/avisos/validation.ts` (puro: UUID, descripción recortada
+  de 1 a 2000 caracteres con saltos de línea normalizados a `\n`, prioridad del
+  enum) y `src/lib/avisos/avisos.ts` (repositorio con `tenantFilter`; el alta
+  resuelve cliente, sede del cliente y contacto del cliente de todo el cliente
+  o de la sede elegida, y escribe `origen=OFICINA`, `estado=NUEVO` y
+  `creado_por_id` de la sesión en una transacción).
+- Las transiciones de estado (validar, bolsa, asignar, tomar, cancelar),
+  la edición y el alta desde el portal de cliente pertenecen a features
+  posteriores.
+
 ## RLS: reevaluación al añadir clientes
 
 `clientes`, `sedes` y `contactos` son las primeras tablas operativas. RLS sigue
@@ -300,8 +348,8 @@ empresa y con las futuras invitaciones y roles.
   empresa. Una sesión caducada, revocada, con usuario `INACTIVO` o con empresa
   `SUSPENDIDA` no autentica. El superadmin se valida con `empresa_id` nulo.
 - **Rutas:** públicas `/`, `/login`, `/health` y los endpoints de auth;
-  privadas `/panel`, `/panel/usuarios`, `/panel/empresa`, `/panel/clientes` y
-  `/superadmin`. Cada página de
+  privadas `/panel`, `/panel/usuarios`, `/panel/empresa`, `/panel/clientes`,
+  `/panel/avisos` y `/superadmin`. Cada página de
   `/panel` llama a `requireSession` o `requirePermission`;
   `/superadmin` añade `requireSuperadmin`, que redirige a
   `/login?next=...` si no hay sesión y usa `forbidden()` si el usuario no es
@@ -334,7 +382,9 @@ El payload nunca incluye la cadena de conexión, credenciales ni el error crudo.
   y roles (CHECK, validaciones, aislamiento y último administrador con dos
   transacciones concurrentes reales) y clientes (columnas de `sedes` sin datos
   fiscales, CHECK, FK compuestos, alta con rollback, NIF duplicado por empresa,
-  sede de otro cliente y aislamiento A/B).
+  sede de otro cliente y aislamiento A/B) y avisos (enums, CHECK, FK
+  compuestos, alta en las tres prioridades con `origen`/`estado` fijos, sede y
+  contacto que no encajan, listado, detalle y aislamiento A/B).
 - `npm run db:seed`: seed local idempotente con `tsx` (`prisma/seed.ts`).
   Requiere `SEED_*`, rechaza `NODE_ENV=production` y no forma parte de
   `init.sh` ni del gate.

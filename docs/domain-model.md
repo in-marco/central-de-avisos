@@ -69,6 +69,18 @@
 - Descripción de la avería, prioridad (Normal/Alta/Urgente) y origen (Oficina/Cliente).
 - Estado, técnico asignado y fechas relevantes.
 - Puede tener varios partes.
+- Implementado (`office-aviso-creation`): tabla `avisos` con `empresa_id`,
+  `cliente_id`, `sede_id`, `contacto_id` (los cuatro obligatorios),
+  `descripcion` (1-2000 caracteres en la aplicación, no vacía en BD),
+  `prioridad` (`NORMAL`/`ALTA`/`URGENTE`, Normal por defecto), `origen`
+  (`OFICINA`/`CLIENTE`), `estado` (enum completo `NUEVO`, `PENDIENTE`,
+  `ASIGNADO`, `EN_CURSO`, `RESUELTO`, `FACTURADO`, `CANCELADO`; nace `NUEVO`),
+  `creado_por_id` (usuario que lo registró) y fechas. FK compuestos impiden
+  mezclar empresa, cliente, sede y contacto; el contacto es de todo el cliente
+  o de la sede del aviso. Hoy solo existe el alta desde oficina (`OFICINA`,
+  `NUEVO`); las transiciones, el técnico asignado y el alta desde el portal
+  llegan con sus features. No hay número correlativo de aviso: se identifica
+  por cliente, sede y fecha.
 
 ### Parte
 - Aviso al que pertenece (siempre uno en el MVP).

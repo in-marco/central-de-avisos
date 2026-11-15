@@ -148,7 +148,7 @@ Los usuarios de empresa tienen roles combinables (`Administrador`, `Oficina`,
 `src/lib/authz/permissions.ts`. Los roles se leen de la base de datos en cada
 petición: un cambio surte efecto sin volver a iniciar sesión.
 
-- La navegación del panel muestra «Inicio» a todos, «Clientes» a
+- La navegación del panel muestra «Inicio» a todos, «Avisos» y «Clientes» a
   administrador y oficina, «Usuarios» y «Empresa» solo a quien puede gestionar
   usuarios o configurar la empresa (rol Administrador) y «Panel de proveedor»
   solo al superadmin. Ocultar no es la defensa: cada página y acción se
@@ -203,6 +203,27 @@ de su empresa en `/panel/clientes`:
 - Técnico, usuario sin roles y superadmin reciben 403. No hay borrado,
   búsqueda ni paginación.
 
+## Avisos (alta desde oficina)
+
+Administrador y oficina (permiso `avisos.crear`, también combinados con
+Técnico) registran los avisos que comunican los clientes en `/panel/avisos`:
+
+- **Alta** (`/panel/avisos/nuevo`), en dos pasos y sin JavaScript: primero el
+  cliente; después la sede, el contacto (de todo el cliente o de la sede
+  elegida), la descripción de la avería (hasta 2000 caracteres) y la prioridad
+  (Normal, Alta o Urgente; Normal por defecto). El aviso nace en estado
+  «Nuevo» con origen «Oficina» y guarda quién lo creó.
+- **Listado** (`/panel/avisos`): del más reciente al más antiguo, con
+  prioridad, estado, cliente, sede, inicio de la descripción y fecha (hora de
+  Madrid).
+- **Detalle** (`/panel/avisos/<id>`): estado, prioridad, origen, cliente
+  (enlace a su ficha), sede, contacto, descripción completa, autor y fecha.
+- Un aviso o cliente de otra empresa se trata como inexistente. Técnico,
+  usuario sin roles y superadmin reciben 403.
+- Fuera de este slice: validar, poner en bolsa, asignar, cancelar o editar
+  avisos, número de aviso, filtros y paginación, y alta desde el portal de
+  cliente.
+
 ## Activación del administrador invitado
 
 El administrador abre el enlace `/invitacion/<token>` que muestra el detalle de
@@ -229,6 +250,8 @@ npm run dev
 - Configuración de empresa: <http://localhost:3000/panel/empresa> (solo
   administrador)
 - Clientes: <http://localhost:3000/panel/clientes> (administrador y oficina)
+- Avisos: <http://localhost:3000/panel/avisos>, `/panel/avisos/nuevo` y
+  `/panel/avisos/<id>` (administrador y oficina)
 - Panel de proveedor: <http://localhost:3000/superadmin> (solo superadmin)
 - Empresas: <http://localhost:3000/superadmin/empresas>
 - Planes: <http://localhost:3000/superadmin/planes>
@@ -297,7 +320,8 @@ duplicados, plan inactivo, invitación hasheada, estados y rollback) y roles
 configuración de facturación (columnas, enum, CHECK de serie y tarifa,
 normalización, NIF duplicado y aislamiento) y clientes (CHECK, FK compuestos,
 alta con rollback, NIF por empresa, sede de otro cliente y aislamiento entre
-empresas).
+empresas) y avisos (enums, CHECK, FK compuestos, alta con `origen`/`estado`
+fijos, sede y contacto que no encajan, listado, detalle y aislamiento).
 
 Smoke HTTP con `next start` (Git Bash; `SMOKE_*` opcionales para las
 comprobaciones autenticadas por rol):
@@ -318,13 +342,17 @@ bash scripts/validate-smoke.sh
 - `src/app/login/` — formulario de login server-rendered.
 - `src/app/panel/` — layout con navegación por permisos, panel, `usuarios/`
   (roles), `empresa/` (configuración de facturación), `clientes/` (listado,
-  alta, detalle y 404 propio), `_components/` (UI compartida del panel) y
+  alta, detalle y 404 propio), `avisos/` (listado, alta en dos pasos, detalle,
+  404 propio y chips de prioridad y estado), `_components/` (UI compartida del panel) y
   `forbidden.tsx` (403 propio).
 - `src/app/api/panel/usuarios/roles/` — `POST` de cambio de roles.
 - `src/app/api/panel/empresa/` — `POST` de configuración de la empresa.
 - `src/app/api/panel/clientes/` — `POST` de alta, datos, sedes y contactos.
 - `src/lib/clientes/` — validación pura y repositorio de clientes, sedes y
   contactos con `tenantFilter`.
+- `src/app/api/panel/avisos/` — `POST` de alta de aviso.
+- `src/lib/avisos/` — validación pura y repositorio de avisos con
+  `tenantFilter`.
 - `src/lib/authz/` — matriz de permisos, navegación y guards
   (`requirePermission`, `authorizeCompanyRequest`).
 - `src/lib/empresa/` — usuarios de la empresa, cambio transaccional de roles y

@@ -28,7 +28,7 @@ function findPages(dir: string): string[] {
 describe("guards de las páginas de /panel", () => {
   const pages = findPages(PANEL_DIR);
 
-  it("encuentra al menos /panel, /panel/usuarios, /panel/empresa y las páginas de clientes", () => {
+  it("encuentra al menos /panel, /panel/usuarios, /panel/empresa y las páginas de clientes y avisos", () => {
     const relative = pages.map((page) =>
       path.relative(PANEL_DIR, page).split(path.sep).join("/"),
     );
@@ -40,6 +40,9 @@ describe("guards de las páginas de /panel", () => {
         "clientes/page.tsx",
         "clientes/nuevo/page.tsx",
         "clientes/[id]/page.tsx",
+        "avisos/page.tsx",
+        "avisos/nuevo/page.tsx",
+        "avisos/[id]/page.tsx",
       ]),
     );
   });

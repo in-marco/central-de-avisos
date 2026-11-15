@@ -90,6 +90,21 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   hay), y un recurso de otra empresa se trata como inexistente: 404 en las
   páginas y `?error=no-encontrado` en los route handlers, nunca un 403 que
   revele que existe. Motivo: no filtrar la existencia de datos de otro tenant.
+- **MUST** un aviso referencia cliente, sede y contacto con FK compuestos
+  `(cliente_id, empresa_id) → clientes`, `(sede_id, cliente_id) → sedes` y
+  `(contacto_id, cliente_id) → contactos`, y el contacto es de todo el cliente
+  (`sede_id` nulo) o de la sede del aviso; esta última regla la aplica
+  `src/lib/avisos/avisos.ts` y la cubre `test:db`. Motivo: un aviso nunca debe
+  mezclar empresas ni clientes, y un FK no puede expresar «nulo o igual».
+- **MUST** `origen`, `estado`, `empresa_id` y `creado_por_id` de un aviso los
+  fija el servidor (sesión y repositorio), nunca el formulario; el alta de
+  oficina escribe `OFICINA` y `NUEVO`. Las transiciones de estado solo se
+  hacen en las features que las definen. Motivo: el ciclo de vida del aviso no
+  debe poder saltarse desde una petición manipulada.
+- **MUST** los mensajes de `?error=`/`?ok=` de páginas nuevas se buscan con
+  `Object.hasOwn` (o un `Map`), nunca indexando un objeto literal. Motivo:
+  `?error=__proto__` o `constructor` resuelven propiedades heredadas y
+  provocan un 500 (hallazgo de `client-records`).
 - **MUST** los datos fiscales del destinatario de una factura (razón social,
   NIF, dirección de facturación) viven solo en `clientes`; la factura de
   trabajo referenciará `cliente_id`, nunca `sede_id`. Motivo: el cliente es el
@@ -159,7 +174,8 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   invitación, superadmin sin roles, roles sin nulos, serie de factura
   normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$`, tarifa horaria de empresa `> 0`, NIF
   de cliente normalizado, tarifa de cliente no negativa, contacto con teléfono
-  o email y email de contacto normalizado) se mantienen en SQL y se cubren con
+  o email, email de contacto normalizado y descripción de aviso no vacía
+  `avisos_descripcion_no_vacia`) se mantienen en SQL y se cubren con
   `npm run test:db` al cambiar el esquema. Motivo: Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.
