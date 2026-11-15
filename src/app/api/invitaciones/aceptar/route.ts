@@ -94,7 +94,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.redirect(new URL("/panel", request.url), 303);
+  // Destino por tipo de invitación: `/panel` (administrador) o `/portal`
+  // (contacto de cliente). Es un valor fijo del servidor, nunca de la petición.
+  const response = NextResponse.redirect(
+    new URL(result.destino, request.url),
+    303,
+  );
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: result.sessionToken,

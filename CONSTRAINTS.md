@@ -38,7 +38,8 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   debe permitir activar cuentas.
 - **MUST** la búsqueda de invitación por `token_hash` es una excepción de
   identidad sin `tenantFilter` limitada a `src/lib/onboarding/`; no se listan
-  invitaciones fuera de `src/lib/superadmin/*`. Motivo: el token identifica una
+  invitaciones fuera de `src/lib/superadmin/*` (las de contacto de cliente se
+  consultan en `src/lib/portal/` con `tenantFilter` y cliente). Motivo: el token identifica una
   sola fila y precede al tenant, como la sesión.
 - **MUST** aceptar una invitación es atómico y de un solo uso: `aceptada_en`,
   `password_hash`, `estado ACTIVO` y la sesión se escriben en una transacción,
@@ -121,7 +122,7 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   `src/lib/authz/permissions.ts`; ocultar una entrada de la navegación nunca
   basta. Única excepción: la portada `/panel`, que comparten el superadmin y
   los usuarios sin roles, usa `requireSession` y no muestra datos de empresa
-  protegidos por permiso. Motivo: la interfaz no es la frontera de seguridad y
+  protegidos por permiso (al usuario de cliente lo redirige a `/portal`). Motivo: la interfaz no es la frontera de seguridad y
   las URLs se pueden escribir a mano.
 - **MUST** la matriz de `permissions.ts` coincide con
   `docs/user-and-access-model.md`; si discrepan, manda el documento y se
@@ -145,6 +146,48 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   (`panel-guards.test.ts` lo comprueba). Motivo: Next renderiza la página aunque
   el layout no lo haga, y si el layout redirigiera, el login perdería la ruta
   pedida en `next`.
+
+## Portal de cliente
+
+- **MUST** toda consulta del portal de cliente (sedes hoy; avisos y facturas
+  del portal después) filtra con `clienteFilter(clienteScope(session))`, es
+  decir, por `empresa_id` **y** `cliente_id` de la sesión, nunca por ids de la
+  petición; cada feature nueva añade su caso a
+  `src/lib/portal/portal.db.test.ts` (C1/C2 de la misma empresa y A/B).
+  Motivo: `tenantFilter` solo separa empresas; dentro de una empresa, un
+  cliente no debe ver datos de otro.
+- **MUST** el usuario de cliente (`usuarios.cliente_id` no nulo) no tiene roles
+  ni permisos de empresa: CHECK `usuarios_cliente_coherente` (sin roles, no
+  superadmin, con empresa) y `can()` devuelve `false` si la sesión tiene
+  cliente. No existe rol `CLIENTE`. Motivo: que no pueda combinarse con roles
+  de empresa y que su alcance sea obligatorio por construcción.
+- **MUST** cada `page.tsx` de `/portal` llama a `requirePortalSession`; el
+  layout de `/portal` no redirige ni deniega y no hay route handlers
+  `/api/portal/*` mientras el portal sea de solo lectura
+  (`portal-guards.test.ts` lo comprueba). Motivo: la frontera es la página,
+  como en `/panel`.
+- **Excepción nombrada a «404 en las páginas»:** en `/portal`, cualquier
+  recurso fuera del cliente de la sesión (de otro cliente, de otra empresa,
+  inexistente o con id mal formado) responde el mismo `forbidden()` (403
+  genérico, sin datos). Se limita a `/portal`. Motivo: la verificación de la
+  feature exige 403 y el texto uniforme no revela si el recurso existe.
+- **MUST** el enlace de invitación al portal solo se entrega en la cookie flash
+  `central_invitacion_portal` (HttpOnly, SameSite=Strict, 60 s, Path
+  `/panel/clientes`) y la ficha solo lo muestra si corresponde a una invitación
+  pendiente de un usuario de ese cliente y empresa. Generar un enlace nuevo
+  caduca los pendientes anteriores del mismo usuario. Motivo: mismo modelo que
+  `central_invitacion`, sin que un enlace viejo siga valiendo.
+- **MUST** las invitaciones de contacto se leen solo en `src/lib/portal/`
+  filtradas por empresa y cliente; las vistas de superadmin (listado, detalle y
+  contador) filtran `tipo = ADMINISTRADOR_EMPRESA` y `/panel/usuarios` excluye
+  usuarios con `cliente_id`. Motivo: un usuario o invitación de portal no debe
+  aparecer como si fuera de empresa ni admitir roles.
+- **MUST** al invitar, el contacto se resuelve con `tenantFilter` y su
+  `clienteId`; `usuarios.contacto_id` es un FK simple, así que la regla «el
+  contacto es de ese cliente y empresa» solo la aplica
+  `src/lib/portal/invitaciones.ts` (cubierta en `test:db`), igual que
+  `contactos.sede_id`. Motivo: PostgreSQL no impide hoy un `contacto_id` de
+  otro cliente; el `cliente_id` sí está protegido por el FK compuesto.
 
 ## RLS diferida
 
@@ -174,8 +217,9 @@ un motivo breve. No repetir aquí lo que ya cubren el dominio, `AGENTS.md` o
   invitación, superadmin sin roles, roles sin nulos, serie de factura
   normalizada `^[A-Z0-9][A-Z0-9-]{0,9}$`, tarifa horaria de empresa `> 0`, NIF
   de cliente normalizado, tarifa de cliente no negativa, contacto con teléfono
-  o email, email de contacto normalizado y descripción de aviso no vacía
-  `avisos_descripcion_no_vacia`) se mantienen en SQL y se cubren con
+  o email, email de contacto normalizado, descripción de aviso no vacía
+  `avisos_descripcion_no_vacia`, usuario de cliente coherente y contacto que
+  requiere cliente) se mantienen en SQL y se cubren con
   `npm run test:db` al cambiar el esquema. Motivo: Prisma no los regenera.
 - **MUST** los emails se guardan en minúsculas y sin espacios extremos; el
   email es único global. Motivo: identidad de usuario y login.

@@ -105,6 +105,21 @@ describe("matriz de permisos", () => {
     expect(can(superadmin, "usuarios.gestionar")).toBe(false);
   });
 
+  it("el usuario de cliente no tiene ningún permiso de empresa", () => {
+    const clienteSinRoles = subject([], { cliente: { id: "cliente-1" } });
+    // Aunque traiga roles por error, el cliente manda y se deniega todo.
+    const clienteConRoles = subject(["ADMINISTRADOR", "OFICINA", "TECNICO"], {
+      cliente: { id: "cliente-1" },
+    });
+    for (const permiso of PERMISOS) {
+      expect(can(clienteSinRoles, permiso), permiso).toBe(false);
+      expect(can(clienteConRoles, permiso), permiso).toBe(false);
+    }
+    expect(can(subject(["OFICINA"], { cliente: null }), "clientes.gestionar")).toBe(
+      true,
+    );
+  });
+
   it("deniega sin sesión o sin empresa", () => {
     expect(can(null, "panel.ver")).toBe(false);
     expect(can(undefined, "panel.ver")).toBe(false);

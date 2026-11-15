@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInvitationToken } from "@/lib/superadmin/invitations";
 import {
   classifyInvitation,
+  destinationFor,
   isWellFormedInvitationToken,
 } from "./invitation-acceptance";
 
@@ -18,6 +19,8 @@ function invitation(
       passwordHash: string | null;
       esSuperadmin: boolean;
       empresaId: string | null;
+      clienteId: string | null;
+      cliente: { razonSocial: string; empresaId: string } | null;
     }>;
   } = {},
 ) {
@@ -63,10 +66,65 @@ describe("clasificación de la invitación", () => {
     expect(result).toEqual({
       status: "VALIDA",
       invitacionId: "inv-1",
+      tipo: "ADMINISTRADOR_EMPRESA",
       expiraEn: new Date("2026-11-20T10:00:00.000Z"),
       empresa: { id: "emp-1", nombre: "Empresa Norte" },
+      cliente: null,
       usuario: { id: "usr-1", nombre: "Ana", email: "ana@norte.local" },
     });
+  });
+
+  it("acepta una invitación de contacto coherente y devuelve su cliente", () => {
+    const result = classifyInvitation(
+      invitation({
+        tipo: "CONTACTO_CLIENTE",
+        usuario: {
+          clienteId: "cli-1",
+          cliente: { razonSocial: "Talleres Norte SL", empresaId: "emp-1" },
+        },
+      }),
+      now,
+    );
+
+    expect(result).toMatchObject({
+      status: "VALIDA",
+      tipo: "CONTACTO_CLIENTE",
+      cliente: { razonSocial: "Talleres Norte SL" },
+    });
+    expect(destinationFor("CONTACTO_CLIENTE")).toBe("/portal");
+    expect(destinationFor("ADMINISTRADOR_EMPRESA")).toBe("/panel");
+  });
+
+  it("rechaza invitaciones cuyo tipo no encaja con el cliente del usuario", () => {
+    // Administrador con cliente.
+    expect(
+      classifyInvitation(
+        invitation({
+          usuario: {
+            clienteId: "cli-1",
+            cliente: { razonSocial: "X", empresaId: "emp-1" },
+          },
+        }),
+        now,
+      ),
+    ).toEqual({ status: "NO_ENCONTRADA" });
+    // Contacto sin cliente.
+    expect(
+      classifyInvitation(invitation({ tipo: "CONTACTO_CLIENTE" }), now),
+    ).toEqual({ status: "NO_ENCONTRADA" });
+    // Contacto con cliente de otra empresa.
+    expect(
+      classifyInvitation(
+        invitation({
+          tipo: "CONTACTO_CLIENTE",
+          usuario: {
+            clienteId: "cli-1",
+            cliente: { razonSocial: "X", empresaId: "otra" },
+          },
+        }),
+        now,
+      ),
+    ).toEqual({ status: "NO_ENCONTRADA" });
   });
 
   it("trata una invitación inexistente o incoherente como no encontrada", () => {

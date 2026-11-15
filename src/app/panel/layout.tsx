@@ -28,7 +28,8 @@ export default async function PanelLayout({
     return <>{children}</>;
   }
 
-  const ambito = session.empresa?.nombre ?? "Proveedor SaaS";
+  const ambito =
+    session.cliente?.razonSocial ?? session.empresa?.nombre ?? "Proveedor SaaS";
 
   return (
     <div className="min-h-screen bg-background text-text">

@@ -195,7 +195,12 @@ Ninguna. En este entorno no hay herramienta de generación de imágenes disponib
 ## Open Design Questions
 
 - Nombre y wordmark definitivos del producto.
-- Si el portal de cliente comparte el mismo shell visual o usa una versión más simple.
+- ~~Si el portal de cliente comparte el mismo shell visual o usa una versión más simple.~~
+  Resuelta en `client-portal-invitation`: versión más simple. Mismos tokens,
+  cabecera con wordmark, «Portal de cliente», nombre, email · razón social y
+  «Cerrar sesión»; sin navegación de oficina; contenido de una columna
+  (`max-w-3xl`), mobile-first a 390 px; sedes como tarjetas enlazables de 48 px
+  como mínimo; 403 propio con texto genérico.
 - Branding del PDF de factura mientras no haya marca blanca.
 - Necesidad de modo oscuro para técnicos que trabajan de noche.
 - Nivel de densidad deseado en el panel de oficina.

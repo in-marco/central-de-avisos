@@ -126,16 +126,39 @@ Notas:
   combinaciones con Técnico, como el encargado): ven «Avisos» en la
   navegación y usan `/panel/avisos` (listado), `/panel/avisos/nuevo` (alta) y
   `/panel/avisos/<id>` (detalle), con `POST /api/panel/avisos`. Técnico,
-  usuario sin roles y superadmin reciben 403 en las tres páginas y en el POST;
-  un anónimo va al login con `next`. La empresa y el creador salen de la
+  usuario sin roles, usuario de cliente y superadmin reciben 403 en las tres
+  páginas y en el POST; un anónimo va al login con `next`. La empresa y el creador salen de la
   sesión; cliente, sede y contacto se resuelven dentro de la empresa, y un
   cliente o aviso de otra empresa se trata como inexistente. El origen
   (`OFICINA`) y el estado (`NUEVO`) los fija el servidor. La parte de Cliente
   («Sí, de sus sedes») llegará con `client-aviso-creation`.
-- Siguen fuera de este slice: rol Cliente y portal (`client-portal-invitation`),
-  invitar usuarios de oficina o técnicos, desactivar usuarios
-  (`user-deactivation`), auditoría de cambios de rol, reenvío de invitaciones,
-  recuperación de contraseña y revocación masiva.
+- **Usuario de cliente (portal, `client-portal-invitation`).** Administrador y
+  oficina (`clientes.gestionar`) invitan a un contacto con email desde la ficha
+  del cliente. Se crea un usuario `INACTIVO` sin contraseña ligado a su
+  `cliente_id` y a su `contacto_id` (un acceso por contacto), sin roles, y una
+  invitación de 7 días cuyo enlace se muestra una vez (cookie flash de 60 s).
+  «Generar nuevo enlace» sustituye al anterior mientras el usuario siga
+  inactivo. El email se copia del contacto y debe estar libre en toda la
+  plataforma; no se sincroniza si el contacto cambia después.
+- No hay rol `CLIENTE`: el usuario de cliente se identifica por `cliente_id`
+  con `roles = {}` (CHECK). No tiene ningún permiso de empresa de la matriz
+  anterior (`can()` devuelve `false`) y no aparece en `/panel/usuarios`.
+- Tras activar su cuenta en `/invitacion/<token>` entra en `/portal`, de solo
+  lectura: datos de su cliente y sus sedes. `/panel` le lleva a `/portal`; el
+  resto de `/panel/*` (incluido `/panel/avisos`), `/superadmin` y las APIs de
+  panel le devuelven 403.
+  Usuarios de empresa y superadmin reciben 403 en `/portal`.
+- Aislamiento por cliente: cualquier sede fuera de su cliente (de otro cliente
+  de la misma empresa, de otra empresa, inexistente o mal formada) responde el
+  mismo 403 sin datos. Las consultas del portal filtran por empresa y cliente
+  de la sesión (`clienteFilter(clienteScope(session))`); avisos y facturas del
+  portal (`client-aviso-creation`, `client-invoice-access`) usarán el mismo
+  contrato.
+- Siguen fuera de este slice: avisos y facturas del portal, retirar el acceso
+  de un usuario de cliente y desactivar usuarios (`user-deactivation`),
+  invitar usuarios de oficina o técnicos, auditoría de cambios de rol y de
+  invitaciones, reenvío de invitaciones de administrador, recuperación de
+  contraseña y revocación masiva.
 
 ## Revocation / Expiry
 
@@ -145,7 +168,9 @@ Notas:
 - Retirar el acceso de un usuario de cliente no borra avisos ni facturas ya emitidas.
 - Suspender una empresa bloquea el acceso de todos sus usuarios, pero conserva sus datos y facturas.
 - Las invitaciones caducan a los 7 días si no se aceptan. El enlace mostrado
-  desde la cookie flash no se puede recuperar ni reenviar en este slice.
+  desde la cookie flash no se puede recuperar. La invitación de administrador
+  no se reenvía; la de portal admite «Generar nuevo enlace», que caduca la
+  anterior.
 
 ## Edge Cases
 

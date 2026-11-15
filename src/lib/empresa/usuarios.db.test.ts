@@ -72,6 +72,65 @@ async function teamFixture(tx: Prisma.TransactionClient, suffix: string) {
   return { empresa, admin, tecnico, oficina };
 }
 
+async function createClienteUser(
+  tx: Prisma.TransactionClient,
+  empresaId: string,
+  suffix: string,
+) {
+  const cliente = await tx.cliente.create({
+    data: {
+      empresaId,
+      razonSocial: "Cliente portal",
+      nif: "B12345678",
+      direccionFacturacion: "Calle 1",
+    },
+  });
+  return tx.usuario.create({
+    data: {
+      empresaId,
+      clienteId: cliente.id,
+      email: `aaa-cliente-${suffix}@example.com`,
+      nombre: "Aaa Cliente",
+      roles: [],
+    },
+  });
+}
+
+describe("usuarios de cliente (portal) fuera de la gestión de usuarios", () => {
+  it("listCompanyUsers no lista usuarios de cliente", async () => {
+    const suffix = uniqueSuffix();
+    const result = await inRollback(async (tx) => {
+      const team = await teamFixture(tx, suffix);
+      const clienteUser = await createClienteUser(tx, team.empresa.id, suffix);
+      return { clienteUser, usuarios: await listCompanyUsers(tx, team.empresa.id) };
+    });
+
+    expect(result.usuarios.map((usuario) => usuario.id)).not.toContain(
+      result.clienteUser.id,
+    );
+    expect(result.usuarios).toHaveLength(3);
+  });
+
+  it("cambiar los roles de un usuario de cliente devuelve no-encontrado sin tocarlo", async () => {
+    const suffix = uniqueSuffix();
+    const result = await inRollback(async (tx) => {
+      const team = await teamFixture(tx, suffix);
+      const clienteUser = await createClienteUser(tx, team.empresa.id, suffix);
+      const update = await updateUserRolesInTransaction(tx, {
+        empresaId: team.empresa.id,
+        actorId: team.admin.id,
+        usuarioId: clienteUser.id,
+        roles: ["OFICINA"],
+      });
+      const after = await tx.usuario.findUniqueOrThrow({ where: { id: clienteUser.id } });
+      return { update, after };
+    });
+
+    expect(result.update).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.after.roles).toEqual([]);
+  });
+});
+
 describe("listCompanyUsers", () => {
   it("lista solo usuarios de la empresa, ordenados por nombre y sin superadmin", async () => {
     const suffix = uniqueSuffix();

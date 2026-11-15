@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { Prisma } from "@/generated/prisma/client";
 import { disconnectDb } from "@/db/client";
 import { inRollback, uniqueSuffix } from "@/db/db-test-utils";
+import { can, PERMISOS } from "@/lib/authz/permissions";
 import { hashPassword } from "./password";
 import {
   authenticateCredentials,
@@ -362,5 +363,88 @@ describe("sesiones revocables", () => {
     expect(sesiones).toHaveLength(1);
     expect(sesiones[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(sesiones[0]?.tokenHash).not.toBe("token-inventado");
+  });
+});
+
+describe("sesión de usuario de cliente (portal)", () => {
+  async function createClienteUser(tx: Prisma.TransactionClient, suffix: string) {
+    const fixture = await createFixture(tx, suffix);
+    const cliente = await tx.cliente.create({
+      data: {
+        empresaId: fixture.empresa!.id,
+        razonSocial: "Cliente Portal SL",
+        nif: "B12345678",
+        direccionFacturacion: "Calle Portal 1",
+      },
+    });
+    const usuario = await tx.usuario.create({
+      data: {
+        empresaId: fixture.empresa!.id,
+        clienteId: cliente.id,
+        email: `cliente-${suffix}@example.com`,
+        nombre: "Usuario Cliente",
+        passwordHash: await hashPassword("correcta"),
+        estado: "ACTIVO",
+        roles: [],
+      },
+    });
+
+    return { ...fixture, cliente, usuario };
+  }
+
+  it("login y sesión exponen el cliente, sin roles ni permisos de empresa", async () => {
+    const suffix = uniqueSuffix();
+
+    const result = await inRollback(async (tx) => {
+      const fixture = await createClienteUser(tx, suffix);
+      const auth = await authenticateCredentials({
+        db: tx,
+        email: fixture.usuario.email,
+        password: "correcta",
+      });
+      const current = auth.ok ? await getSessionByToken(tx, auth.token) : null;
+      return { fixture, auth, current };
+    });
+
+    expect(result.auth.ok).toBe(true);
+    if (result.auth.ok) {
+      expect(result.auth.user.cliente).toEqual({
+        id: result.fixture.cliente.id,
+        razonSocial: "Cliente Portal SL",
+      });
+      expect(result.auth.user.roles).toEqual([]);
+    }
+    expect(result.current?.cliente?.id).toBe(result.fixture.cliente.id);
+    expect(result.current?.empresa?.id).toBe(result.fixture.empresa!.id);
+    expect(result.current?.roles).toEqual([]);
+    for (const permiso of PERMISOS) {
+      expect(can(result.current, permiso), permiso).toBe(false);
+    }
+  });
+
+  it("los usuarios de empresa tienen cliente nulo", async () => {
+    const suffix = uniqueSuffix();
+    const current = await inRollback(async (tx) => {
+      const fixture = await createFixture(tx, suffix);
+      const { token } = await createSession(tx, { usuarioId: fixture.usuario.id });
+      return getSessionByToken(tx, token);
+    });
+
+    expect(current?.cliente).toBeNull();
+  });
+
+  it("la sesión de cliente deja de valer si la empresa se suspende", async () => {
+    const suffix = uniqueSuffix();
+    const current = await inRollback(async (tx) => {
+      const fixture = await createClienteUser(tx, suffix);
+      const { token } = await createSession(tx, { usuarioId: fixture.usuario.id });
+      await tx.empresa.update({
+        where: { id: fixture.empresa!.id },
+        data: { estado: "SUSPENDIDA" },
+      });
+      return getSessionByToken(tx, token);
+    });
+
+    expect(current).toBeNull();
   });
 });

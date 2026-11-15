@@ -66,8 +66,10 @@
   desde una cookie flash de 60 s; si se pierde, no hay reenvío, regeneración ni
   email real en este slice. Mitigación: el superadmin debe copiarlo en el
   momento. La activación (`company-admin-onboarding`) no añadió reenvío ni
-  regeneración: una invitación perdida o caducada no se puede sustituir desde
-  la interfaz. Pendiente de una feature de gestión de invitaciones.
+  regeneración: una invitación de administrador perdida o caducada no se puede
+  sustituir desde la interfaz. Pendiente de una feature de gestión de
+  invitaciones. Las invitaciones al portal de cliente sí admiten «Generar nuevo
+  enlace» desde la ficha del cliente (`client-portal-invitation`).
 - **Token de invitación en el path del enlace:** el enlace `/invitacion/<token>`
   lleva el token en la URL, que puede quedar en el historial del navegador o
   en logs de un proxy. Mitigación: un solo uso, 7 días, `Referrer-Policy:
@@ -168,6 +170,27 @@
 - **Contactos y sedes con avisos no se pueden borrar:** los FK `Restrict`
   impiden borrar un cliente, sede o contacto que tenga avisos. Hoy no hay
   borrado; cuando exista, deberá desactivar en vez de borrar.
+- **`email-en-uso` revela que el email existe:** al invitar a un contacto al
+  portal, el mensaje confirma a la oficina que ese email ya tiene cuenta en la
+  plataforma (de cualquier empresa). Inevitable con el email único global; no
+  dice de quién es. Solo lo ven administrador y oficina.
+- **Contacto del usuario de portal validado solo en la aplicación:**
+  `usuarios.contacto_id` es un FK simple a `contactos(id)`; que el contacto sea
+  del mismo cliente y empresa lo garantiza `src/lib/portal/invitaciones.ts` y
+  lo cubre `test:db`, no PostgreSQL (`cliente_id` sí tiene FK compuesto con
+  `empresa_id`). Mitigación: crear usuarios de cliente solo con
+  `invitePortalContact`.
+- **Sin retirada de acceso al portal:** un usuario de cliente activo no se
+  puede desactivar ni desvincular desde la interfaz hasta `user-deactivation`;
+  tampoco se puede borrar su contacto (FK `Restrict`). Mitigación provisional:
+  suspender la empresa o actuar en base de datos.
+- **Email del usuario de portal no sincronizado:** el email se copia del
+  contacto al invitar; si después se edita el contacto, el usuario sigue
+  entrando con el email antiguo. Pendiente de decidir con `user-deactivation`
+  o una feature de gestión de accesos.
+- **Invitaciones y accesos de portal sin auditoría:** invitar, generar un
+  enlace nuevo y aceptar no dejan registro append-only (solo filas de
+  `invitaciones`). Mitigación: queda en `audit-trail-view`.
 
 ## Research Tasks
 

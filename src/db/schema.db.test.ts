@@ -1442,3 +1442,230 @@ describe("avisos", () => {
     }
   });
 });
+
+describe("usuarios de cliente (portal)", () => {
+  async function escenario(tx: Prisma.TransactionClient, suffix: string) {
+    const plan = await tx.plan.create({
+      data: { nombre: `Plan portal esquema ${suffix}`, importeMensual: "10.00" },
+    });
+    const crear = (tag: string) =>
+      tx.empresa.create({
+        data: {
+          nombre: `Empresa ${tag} ${suffix}`,
+          nif: `${tag}${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-${tag.toLowerCase()}-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+    const a = await crear("PA");
+    const b = await crear("PB");
+    const cliente = await tx.cliente.create({
+      data: {
+        empresaId: a.id,
+        razonSocial: "Cliente portal",
+        nif: "B12345678",
+        direccionFacturacion: "Dirección",
+      },
+    });
+    const contacto = await tx.contacto.create({
+      data: {
+        empresaId: a.id,
+        clienteId: cliente.id,
+        nombre: "Ana",
+        email: `ana-${suffix}@example.com`,
+      },
+    });
+
+    return { a, b, cliente, contacto };
+  }
+
+  function usuarioCliente(
+    empresaId: string | null,
+    clienteId: string | null,
+    suffix: string,
+    extra: Partial<Prisma.UsuarioUncheckedCreateInput> = {},
+  ): Prisma.UsuarioUncheckedCreateInput {
+    return {
+      empresaId,
+      clienteId,
+      email: `portal-${suffix}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+      nombre: "Usuario portal",
+      estado: "INACTIVO",
+      roles: [],
+      ...extra,
+    };
+  }
+
+  it("añade cliente_id, contacto_id, sus FK, el UNIQUE, los CHECK y el tipo CONTACTO_CLIENTE", async () => {
+    const columns = await getDb().$queryRaw<
+      Array<{ column_name: string; is_nullable: string; data_type: string }>
+    >`
+      SELECT column_name, is_nullable, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'usuarios'
+        AND column_name IN ('cliente_id', 'contacto_id')
+      ORDER BY column_name
+    `;
+    expect(columns).toEqual([
+      { column_name: "cliente_id", is_nullable: "YES", data_type: "uuid" },
+      { column_name: "contacto_id", is_nullable: "YES", data_type: "uuid" },
+    ]);
+
+    const constraints = await getDb().$queryRaw<
+      Array<{ conname: string; contype: string; columnas: number; confdeltype: string }>
+    >`
+      SELECT conname, contype::text AS contype, cardinality(conkey)::int AS columnas,
+             confdeltype::text AS confdeltype
+      FROM pg_constraint
+      WHERE conname IN (
+        'usuarios_cliente_id_empresa_id_fkey',
+        'usuarios_contacto_id_fkey',
+        'usuarios_cliente_coherente',
+        'usuarios_contacto_requiere_cliente'
+      )
+      ORDER BY conname
+    `;
+    expect(constraints).toEqual([
+      { conname: "usuarios_cliente_coherente", contype: "c", columnas: 4, confdeltype: " " },
+      { conname: "usuarios_cliente_id_empresa_id_fkey", contype: "f", columnas: 2, confdeltype: "r" },
+      { conname: "usuarios_contacto_id_fkey", contype: "f", columnas: 1, confdeltype: "r" },
+      { conname: "usuarios_contacto_requiere_cliente", contype: "c", columnas: 2, confdeltype: " " },
+    ]);
+
+    const indexes = await getDb().$queryRaw<Array<{ indexname: string; indexdef: string }>>`
+      SELECT indexname, indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'usuarios'
+        AND indexname IN ('usuarios_contacto_id_key', 'usuarios_cliente_id_idx')
+      ORDER BY indexname
+    `;
+    expect(indexes.map((row) => row.indexname)).toEqual([
+      "usuarios_cliente_id_idx",
+      "usuarios_contacto_id_key",
+    ]);
+    expect(indexes[1]?.indexdef).toMatch(/UNIQUE/);
+
+    const tipos = await getDb().$queryRaw<Array<{ valor: string }>>`
+      SELECT unnest(enum_range(NULL::tipo_invitacion))::text AS valor
+    `;
+    expect(tipos.map((row) => row.valor)).toEqual([
+      "ADMINISTRADOR_EMPRESA",
+      "CONTACTO_CLIENTE",
+    ]);
+
+    const roles = await getDb().$queryRaw<Array<{ valor: string }>>`
+      SELECT unnest(enum_range(NULL::rol_usuario))::text AS valor
+    `;
+    // Sin rol CLIENTE: el usuario de cliente se identifica por cliente_id.
+    expect(roles.map((row) => row.valor)).toEqual(["ADMINISTRADOR", "OFICINA", "TECNICO"]);
+  });
+
+  it("acepta un usuario de cliente coherente ligado a su contacto", async () => {
+    const suffix = uniqueSuffix();
+    const usuario = await inRollback(async (tx) => {
+      const { a, cliente, contacto } = await escenario(tx, suffix);
+      return tx.usuario.create({
+        data: usuarioCliente(a.id, cliente.id, suffix, { contactoId: contacto.id }),
+      });
+    });
+
+    expect(usuario.roles).toEqual([]);
+    expect(usuario.clienteId).not.toBeNull();
+    expect(usuario.contactoId).not.toBeNull();
+  });
+
+  it("rechaza un cliente de otra empresa (FK compuesto)", async () => {
+    const suffix = uniqueSuffix();
+    await expect(
+      inRollback(async (tx) => {
+        const { b, cliente } = await escenario(tx, suffix);
+        return tx.usuario.create({ data: usuarioCliente(b.id, cliente.id, suffix) });
+      }),
+    ).rejects.toThrow(/usuarios_cliente_id_empresa_id_fkey|Foreign key/i);
+  });
+
+  it("rechaza un usuario de cliente con roles, superadmin o sin empresa (CHECK)", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente } = await escenario(tx, suffix);
+        return tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, suffix, { roles: ["OFICINA"] }),
+        });
+      }),
+    ).rejects.toThrow(/usuarios_cliente_coherente/);
+
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente } = await escenario(tx, `${suffix}s`);
+        return tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, `${suffix}s`, { esSuperadmin: true }),
+        });
+      }),
+    ).rejects.toThrow(/usuarios_cliente_coherente|usuarios_superadmin/);
+
+    await expect(
+      inRollback(async (tx) => {
+        const { cliente } = await escenario(tx, `${suffix}n`);
+        return tx.usuario.create({ data: usuarioCliente(null, cliente.id, `${suffix}n`) });
+      }),
+    ).rejects.toThrow(/usuarios_cliente_coherente|usuarios_/);
+
+    // Un usuario de cliente no puede ganar roles después.
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente } = await escenario(tx, `${suffix}u`);
+        const usuario = await tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, `${suffix}u`),
+        });
+        return tx.usuario.update({
+          where: { id: usuario.id },
+          data: { roles: ["ADMINISTRADOR"] },
+        });
+      }),
+    ).rejects.toThrow(/usuarios_cliente_coherente/);
+  });
+
+  it("rechaza contacto_id sin cliente_id (CHECK)", async () => {
+    const suffix = uniqueSuffix();
+    await expect(
+      inRollback(async (tx) => {
+        const { a, contacto } = await escenario(tx, suffix);
+        return tx.usuario.create({
+          data: usuarioCliente(a.id, null, suffix, {
+            contactoId: contacto.id,
+            roles: ["OFICINA"],
+          }),
+        });
+      }),
+    ).rejects.toThrow(/usuarios_contacto_requiere_cliente/);
+  });
+
+  it("rechaza dos usuarios con el mismo contacto (UNIQUE)", async () => {
+    const suffix = uniqueSuffix();
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente, contacto } = await escenario(tx, suffix);
+        await tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, suffix, { contactoId: contacto.id }),
+        });
+        return tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, `${suffix}2`, { contactoId: contacto.id }),
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("no permite borrar un contacto o un cliente con acceso al portal (Restrict)", async () => {
+    const suffix = uniqueSuffix();
+    await expect(
+      inRollback(async (tx) => {
+        const { a, cliente, contacto } = await escenario(tx, suffix);
+        await tx.usuario.create({
+          data: usuarioCliente(a.id, cliente.id, suffix, { contactoId: contacto.id }),
+        });
+        return tx.contacto.delete({ where: { id: contacto.id } });
+      }),
+    ).rejects.toThrow();
+  });
+});

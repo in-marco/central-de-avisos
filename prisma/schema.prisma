@@ -38,8 +38,11 @@ enum RolUsuario {
   @@map("rol_usuario")
 }
 
+// ADMINISTRADOR_EMPRESA: alta de empresa por el proveedor (destino /panel).
+// CONTACTO_CLIENTE: acceso al portal de un contacto de cliente (destino /portal).
 enum TipoInvitacion {
   ADMINISTRADOR_EMPRESA
+  CONTACTO_CLIENTE
 
   @@map("tipo_invitacion")
 }
@@ -132,15 +135,25 @@ model Usuario {
   estado        EstadoUsuario @default(ACTIVO)
   esSuperadmin  Boolean       @default(false) @map("es_superadmin")
   roles         RolUsuario[]  @default([])
+  // Usuario de cliente (portal): `cliente_id` no nulo, sin roles, no
+  // superadmin y con empresa (CHECK usuarios_cliente_coherente). El FK
+  // compuesto impide un cliente de otra empresa. `contacto_id` (único) liga
+  // el acceso a un contacto; la regla «el contacto es de ese cliente» se
+  // aplica en src/lib/portal/invitaciones.ts (FK simple, como contactos.sede_id).
+  clienteId     String?       @map("cliente_id") @db.Uuid
+  contactoId    String?       @unique @map("contacto_id") @db.Uuid
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   empresa       Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente       Cliente?     @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  contacto      Contacto?    @relation(fields: [contactoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   sesiones      Sesion[]
   invitaciones  Invitacion[]
   avisosCreados Aviso[]
 
   @@index([empresaId])
+  @@index([clienteId])
   @@map("usuarios")
 }
 
@@ -199,8 +212,10 @@ model Cliente {
   sedes     Sede[]
   contactos Contacto[]
   avisos    Aviso[]
+  usuarios  Usuario[]
 
-  // Destino de los FK compuestos (cliente_id, empresa_id) de sedes y contactos.
+  // Destino de los FK compuestos (cliente_id, empresa_id) de sedes, contactos
+  // y usuarios de cliente.
   @@unique([id, empresaId])
   @@unique([empresaId, nif])
   @@map("clientes")
@@ -242,9 +257,11 @@ model Contacto {
   creadoEn      DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  cliente Cliente @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
-  sede    Sede?   @relation(fields: [sedeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente Cliente  @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  sede    Sede?    @relation(fields: [sedeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   avisos  Aviso[]
+  // Acceso al portal de este contacto (como mucho uno).
+  usuario Usuario?
 
   // Destino del FK compuesto (contacto_id, cliente_id) de avisos.
   @@unique([id, clienteId])

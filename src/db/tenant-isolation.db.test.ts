@@ -27,6 +27,11 @@ import {
   getClienteParaAviso,
   listAvisos,
 } from "@/lib/avisos/avisos";
+import { createPortalScenario } from "@/lib/portal/db-test-fixtures";
+import {
+  invitePortalContactInTransaction,
+  listPortalAccess,
+} from "@/lib/portal/invitaciones";
 
 afterAll(async () => {
   await disconnectDb();
@@ -470,6 +475,40 @@ describe("aislamiento multiempresa", () => {
     expect(result.conContactoB).toEqual({ ok: false, error: "contacto" });
     expect(result.avisosA).toBe(1);
     expect(result.avisosB).toBe(1);
+  });
+
+  it("la oficina de A no invita al portal a contactos de B ni ve sus accesos", async () => {
+    const result = await inRollback(async (tx) => {
+      const s = await createPortalScenario(tx, uniqueSuffix());
+      const invitadoB = await invitePortalContactInTransaction(tx, {
+        empresaId: s.b.id,
+        clienteId: s.bc.cliente.id,
+        contactoId: s.bc.contacto.id,
+        now: new Date("2026-11-15T10:00:00.000Z"),
+      });
+      const antes = await tx.usuario.count({ where: { empresaId: s.b.id } });
+      const desdeA = await invitePortalContactInTransaction(tx, {
+        empresaId: s.a.id,
+        clienteId: s.bc.cliente.id,
+        contactoId: s.bc.contacto.id,
+        now: new Date("2026-11-15T11:00:00.000Z"),
+      });
+      const despues = await tx.usuario.count({ where: { empresaId: s.b.id } });
+      const accesosDesdeA = await listPortalAccess(
+        tx,
+        s.a.id,
+        s.bc.cliente.id,
+        new Date("2026-11-15T11:00:00.000Z"),
+      );
+      const usuariosA = await listCompanyUsers(tx, s.a.id);
+      return { invitadoB, desdeA, antes, despues, accesosDesdeA, usuariosA };
+    });
+
+    expect(result.invitadoB.ok).toBe(true);
+    expect(result.desdeA).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.despues).toBe(result.antes);
+    expect(result.accesosDesdeA.size).toBe(0);
+    expect(result.usuariosA).toEqual([]);
   });
 
   it("requireEmpresaId impide consultar sin contexto de empresa", () => {
