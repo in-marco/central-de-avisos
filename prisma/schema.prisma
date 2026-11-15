@@ -52,6 +52,38 @@ enum ModoFiscal {
   @@map("modo_fiscal")
 }
 
+// Prioridad de un aviso. El chip de la interfaz la muestra con icono y texto.
+enum PrioridadAviso {
+  NORMAL
+  ALTA
+  URGENTE
+
+  @@map("prioridad_aviso")
+}
+
+// Origen de un aviso. El alta de oficina siempre escribe OFICINA; CLIENTE
+// llegará con el portal de cliente.
+enum OrigenAviso {
+  OFICINA
+  CLIENTE
+
+  @@map("origen_aviso")
+}
+
+// Ciclo de vida completo del aviso. office-aviso-creation solo escribe NUEVO;
+// las transiciones pertenecen a features posteriores.
+enum EstadoAviso {
+  NUEVO
+  PENDIENTE
+  ASIGNADO
+  EN_CURSO
+  RESUELTO
+  FACTURADO
+  CANCELADO
+
+  @@map("estado_aviso")
+}
+
 model Plan {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nombre         String   @unique
@@ -85,6 +117,7 @@ model Empresa {
   usuarios     Usuario[]
   invitaciones Invitacion[]
   clientes     Cliente[]
+  avisos       Aviso[]
 
   @@index([planId])
   @@map("empresas")
@@ -102,9 +135,10 @@ model Usuario {
   creadoEn      DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
   actualizadoEn DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  empresa      Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
-  sesiones     Sesion[]
-  invitaciones Invitacion[]
+  empresa       Empresa?     @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sesiones      Sesion[]
+  invitaciones  Invitacion[]
+  avisosCreados Aviso[]
 
   @@index([empresaId])
   @@map("usuarios")
@@ -164,6 +198,7 @@ model Cliente {
   empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   sedes     Sede[]
   contactos Contacto[]
+  avisos    Aviso[]
 
   // Destino de los FK compuestos (cliente_id, empresa_id) de sedes y contactos.
   @@unique([id, empresaId])
@@ -184,6 +219,7 @@ model Sede {
 
   cliente   Cliente    @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
   contactos Contacto[]
+  avisos    Aviso[]
 
   @@unique([id, clienteId])
   @@index([clienteId])
@@ -208,8 +244,45 @@ model Contacto {
 
   cliente Cliente @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
   sede    Sede?   @relation(fields: [sedeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  avisos  Aviso[]
 
+  // Destino del FK compuesto (contacto_id, cliente_id) de avisos.
+  @@unique([id, clienteId])
   @@index([clienteId])
   @@index([sedeId])
   @@map("contactos")
+}
+
+// Aviso: solicitud de intervención de un cliente en una de sus sedes. Los FK
+// compuestos impiden en PostgreSQL mezclar empresa, cliente, sede y contacto:
+// (cliente_id, empresa_id) → clientes, (sede_id, cliente_id) → sedes y
+// (contacto_id, cliente_id) → contactos. Que el contacto sea de todo el
+// cliente o de la sede elegida lo aplica src/lib/avisos/avisos.ts. El CHECK
+// avisos_descripcion_no_vacia vive en SQL. `origen` y `estado` los fija el
+// servidor; el alta de oficina escribe OFICINA y NUEVO.
+model Aviso {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  empresaId     String         @map("empresa_id") @db.Uuid
+  clienteId     String         @map("cliente_id") @db.Uuid
+  sedeId        String         @map("sede_id") @db.Uuid
+  contactoId    String         @map("contacto_id") @db.Uuid
+  descripcion   String
+  prioridad     PrioridadAviso @default(NORMAL)
+  origen        OrigenAviso
+  estado        EstadoAviso    @default(NUEVO)
+  creadoPorId   String         @map("creado_por_id") @db.Uuid
+  creadoEn      DateTime       @default(now()) @map("creado_en") @db.Timestamptz(3)
+  actualizadoEn DateTime       @updatedAt @map("actualizado_en") @db.Timestamptz(3)
+
+  empresa   Empresa  @relation(fields: [empresaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  cliente   Cliente  @relation(fields: [clienteId, empresaId], references: [id, empresaId], onDelete: Restrict, onUpdate: Restrict)
+  sede      Sede     @relation(fields: [sedeId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
+  contacto  Contacto @relation(fields: [contactoId, clienteId], references: [id, clienteId], onDelete: Restrict, onUpdate: Restrict)
+  creadoPor Usuario  @relation(fields: [creadoPorId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([empresaId, creadoEn])
+  @@index([clienteId])
+  @@index([sedeId])
+  @@index([contactoId])
+  @@map("avisos")
 }

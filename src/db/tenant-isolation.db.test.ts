@@ -21,6 +21,12 @@ import {
   upsertContacto,
   upsertSede,
 } from "@/lib/clientes/clientes";
+import {
+  createAvisoInTransaction,
+  getAvisoDetalle,
+  getClienteParaAviso,
+  listAvisos,
+} from "@/lib/avisos/avisos";
 
 afterAll(async () => {
   await disconnectDb();
@@ -361,6 +367,109 @@ describe("aislamiento multiempresa", () => {
     expect(result.despuesB?.contactos).toEqual([
       expect.objectContaining({ nombre: "Contacto", telefono: "600000000" }),
     ]);
+  });
+
+  it("la oficina de A no lista, lee ni crea avisos con datos de B", async () => {
+    const suffix = uniqueSuffix();
+
+    const result = await inRollback(async (tx) => {
+      const plan = await tx.plan.create({
+        data: { nombre: `Plan avisos aislamiento ${suffix}`, importeMensual: "10.00" },
+      });
+      const preparar = async (tag: string) => {
+        const empresa = await tx.empresa.create({
+          data: {
+            nombre: `Empresa ${tag} ${suffix}`,
+            nif: `${tag}${suffix.toUpperCase()}`,
+            emailFacturacion: `facturacion-${tag.toLowerCase()}-${suffix}@example.com`,
+            planId: plan.id,
+          },
+        });
+        const usuario = await tx.usuario.create({
+          data: {
+            empresaId: empresa.id,
+            email: `oficina-${tag.toLowerCase()}-${suffix}@example.com`,
+            nombre: `Oficina ${tag}`,
+            roles: ["OFICINA"],
+          },
+        });
+        const cliente = await createClienteInTransaction(tx, empresa.id, {
+          cliente: {
+            razonSocial: `Cliente ${tag}`,
+            nif: "B12345678",
+            direccionFacturacion: "Dirección",
+            tarifaHoraria: null,
+          },
+          sede: { nombre: "Sede", direccion: "Dirección sede" },
+          contacto: { nombre: "Contacto", telefono: "600000000", email: null },
+          contactoEnSede: false,
+        });
+
+        if (!cliente.ok) {
+          throw new Error("alta");
+        }
+
+        const sede = await tx.sede.findFirstOrThrow({ where: { clienteId: cliente.clienteId } });
+        const contacto = await tx.contacto.findFirstOrThrow({
+          where: { clienteId: cliente.clienteId },
+        });
+        const aviso = await createAvisoInTransaction(tx, empresa.id, usuario.id, {
+          clienteId: cliente.clienteId,
+          sedeId: sede.id,
+          contactoId: contacto.id,
+          descripcion: `Avería ${tag}`,
+          prioridad: "URGENTE",
+        });
+
+        if (!aviso.ok) {
+          throw new Error(aviso.error);
+        }
+
+        return { empresa, usuario, clienteId: cliente.clienteId, sede, contacto, avisoId: aviso.avisoId };
+      };
+
+      const a = await preparar("AA");
+      const b = await preparar("AB");
+      const crearEnA = (values: { clienteId: string; sedeId: string; contactoId: string }) =>
+        createAvisoInTransaction(tx, a.empresa.id, a.usuario.id, {
+          ...values,
+          descripcion: "Intento",
+          prioridad: "NORMAL",
+        });
+
+      return {
+        a,
+        listadoA: await listAvisos(tx, a.empresa.id),
+        detalleB: await getAvisoDetalle(tx, a.empresa.id, b.avisoId),
+        clienteB: await getClienteParaAviso(tx, a.empresa.id, b.clienteId),
+        conClienteB: await crearEnA({
+          clienteId: b.clienteId,
+          sedeId: b.sede.id,
+          contactoId: b.contacto.id,
+        }),
+        conSedeB: await crearEnA({
+          clienteId: a.clienteId,
+          sedeId: b.sede.id,
+          contactoId: a.contacto.id,
+        }),
+        conContactoB: await crearEnA({
+          clienteId: a.clienteId,
+          sedeId: a.sede.id,
+          contactoId: b.contacto.id,
+        }),
+        avisosB: await tx.aviso.count({ where: { empresaId: b.empresa.id } }),
+        avisosA: await tx.aviso.count({ where: { empresaId: a.empresa.id } }),
+      };
+    });
+
+    expect(result.listadoA.map((aviso) => aviso.id)).toEqual([result.a.avisoId]);
+    expect(result.detalleB).toBeNull();
+    expect(result.clienteB).toBeNull();
+    expect(result.conClienteB).toEqual({ ok: false, error: "no-encontrado" });
+    expect(result.conSedeB).toEqual({ ok: false, error: "sede" });
+    expect(result.conContactoB).toEqual({ ok: false, error: "contacto" });
+    expect(result.avisosA).toBe(1);
+    expect(result.avisosB).toBe(1);
   });
 
   it("requireEmpresaId impide consultar sin contexto de empresa", () => {

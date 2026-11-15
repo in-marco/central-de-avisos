@@ -120,6 +120,9 @@ npm run dev
 - Clientes: `http://localhost:3000/panel/clientes`, `/panel/clientes/nuevo` y
   `/panel/clientes/<id>` (permiso `clientes.gestionar`: `ADMINISTRADOR` y
   `OFICINA`; técnico y superadmin reciben 403; un cliente de otra empresa, 404)
+- Avisos: `http://localhost:3000/panel/avisos`, `/panel/avisos/nuevo` y
+  `/panel/avisos/<id>` (permiso `avisos.crear`: `ADMINISTRADOR` y `OFICINA`;
+  técnico y superadmin reciben 403; un aviso de otra empresa, 404)
 - Panel de proveedor: `http://localhost:3000/superadmin` (solo
   `es_superadmin` con `empresa_id` nulo)
 - Empresas: `http://localhost:3000/superadmin/empresas`
@@ -148,7 +151,8 @@ roles en `/panel/usuarios` (`POST /api/panel/usuarios/roles`) y la
 configuración fiscal, serie, tarifa horaria y modo NO-VERIFACTU en
 `/panel/empresa` (`POST /api/panel/empresa`). Administrador y oficina gestionan
 clientes, sedes y contactos en `/panel/clientes` (`POST /api/panel/clientes`,
-`/datos`, `/sedes` y `/contactos`).
+`/datos`, `/sedes` y `/contactos`) y registran avisos en `/panel/avisos`
+(`POST /api/panel/avisos`; el aviso nace `NUEVO` con origen `OFICINA`).
 
 `init.sh` ejecuta `npm run db:generate`, instala si falta `node_modules` y corre
 el gate completo; no arranca PostgreSQL, el servidor de desarrollo ni el seed.

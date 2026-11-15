@@ -165,6 +165,32 @@ done
 expect_status POST /api/panel/clientes 403 -H "Origin: http://evil.example"
 expect_status POST /api/panel/clientes 307 -H "Origin: ${BASE_URL}"
 
+# Avisos sin sesión: páginas al login, API solo POST y mismo origen. No crea datos.
+expect_status GET /panel/avisos 307
+expect_status GET /panel/avisos/nuevo 307
+expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 307
+expect_status GET /api/panel/avisos 405
+expect_status POST /api/panel/avisos 403 -H "Origin: http://evil.example"
+expect_status POST /api/panel/avisos 307 -H "Origin: ${BASE_URL}"
+
+# Avisos con sesión (permiso avisos.crear). Con 200 comprueba las tres
+# páginas (un id inexistente da el 404 propio); con 403, páginas y POST.
+# Nunca envía un POST válido, así que no crea avisos.
+check_avisos_access() {
+  local jar="$1"
+  local status="$2"
+
+  expect_status GET /panel/avisos "$status" -b "$jar"
+  expect_status GET /panel/avisos/nuevo "$status" -b "$jar"
+  if [[ "$status" == "200" ]]; then
+    expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 404 -b "$jar"
+    expect_status GET /panel/avisos/no-es-uuid 404 -b "$jar"
+  else
+    expect_status GET /panel/avisos/00000000-0000-4000-8000-000000000000 "$status" -b "$jar"
+    expect_status POST /api/panel/avisos 403 -b "$jar" -H "Origin: ${BASE_URL}"
+  fi
+}
+
 if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   [[ -n "${SMOKE_EMAIL:-}" && -n "${SMOKE_PASSWORD:-}" ]] \
     || fail "Define SMOKE_EMAIL y SMOKE_PASSWORD juntos"
@@ -189,6 +215,7 @@ if [[ -n "${SMOKE_EMAIL:-}" || -n "${SMOKE_PASSWORD:-}" ]]; then
   expect_status POST /api/panel/empresa 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status GET /panel/clientes 403 -b "$COOKIE_JAR"
   expect_status POST /api/panel/clientes 403 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
+  check_avisos_access "$COOKIE_JAR" 403
   expect_status POST /api/auth/logout 303 -b "$COOKIE_JAR" -H "Origin: ${BASE_URL}"
   expect_status GET /panel 307
 fi
@@ -214,6 +241,7 @@ if [[ -n "${SMOKE_NORMAL_EMAIL:-}" || -n "${SMOKE_NORMAL_PASSWORD:-}" ]]; then
   expect_status GET /panel/empresa 200 -b "$NORMAL_COOKIE_JAR"
   expect_status GET /panel/clientes 200 -b "$NORMAL_COOKIE_JAR"
   expect_status GET /panel/clientes/nuevo 200 -b "$NORMAL_COOKIE_JAR"
+  check_avisos_access "$NORMAL_COOKIE_JAR" 200
   # Revoca la sesión para no dejar sesiones activas de verificación.
   expect_status POST /api/auth/logout 303 -b "$NORMAL_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 fi
@@ -247,6 +275,8 @@ check_role_without_user_management() {
   if [[ "$clientes_status" == "403" ]]; then
     expect_status POST /api/panel/clientes 403 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
   fi
+  # Avisos sigue la misma matriz que clientes (oficina 200, técnico 403).
+  check_avisos_access "$ROLE_COOKIE_JAR" "$clientes_status"
   expect_status POST /api/auth/logout 303 -b "$ROLE_COOKIE_JAR" -H "Origin: ${BASE_URL}"
 }
 

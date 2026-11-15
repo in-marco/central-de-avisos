@@ -122,6 +122,16 @@ Notas:
   se trata como inexistente (404 o `?error=no-encontrado`), sin revelar que
   existe. El superadmin no ve clientes desde `/panel` (queda para
   `superadmin-tenant-view`).
+- «Crear aviso» (permiso `avisos.crear`, Administrador y Oficina, incluidas sus
+  combinaciones con Técnico, como el encargado): ven «Avisos» en la
+  navegación y usan `/panel/avisos` (listado), `/panel/avisos/nuevo` (alta) y
+  `/panel/avisos/<id>` (detalle), con `POST /api/panel/avisos`. Técnico,
+  usuario sin roles y superadmin reciben 403 en las tres páginas y en el POST;
+  un anónimo va al login con `next`. La empresa y el creador salen de la
+  sesión; cliente, sede y contacto se resuelven dentro de la empresa, y un
+  cliente o aviso de otra empresa se trata como inexistente. El origen
+  (`OFICINA`) y el estado (`NUEVO`) los fija el servidor. La parte de Cliente
+  («Sí, de sus sedes») llegará con `client-aviso-creation`.
 - Siguen fuera de este slice: rol Cliente y portal (`client-portal-invitation`),
   invitar usuarios de oficina o técnicos, desactivar usuarios
   (`user-deactivation`), auditoría de cambios de rol, reenvío de invitaciones,

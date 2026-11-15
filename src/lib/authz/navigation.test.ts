@@ -23,27 +23,33 @@ function item(href: string) {
 }
 
 describe("navegación del panel por permisos", () => {
-  it("el administrador ve Inicio, Clientes, Usuarios y Empresa", () => {
+  it("el administrador ve Inicio, Avisos, Clientes, Usuarios y Empresa", () => {
     expect(labels(company(["ADMINISTRADOR"]))).toEqual([
       "Inicio",
+      "Avisos",
       "Clientes",
       "Usuarios",
       "Empresa",
     ]);
   });
 
-  it("oficina ve Inicio y Clientes", () => {
-    expect(labels(company(["OFICINA"]))).toEqual(["Inicio", "Clientes"]);
-    expect(labels(company(["OFICINA", "TECNICO"]))).toEqual(["Inicio", "Clientes"]);
+  it("oficina ve Inicio, Avisos y Clientes", () => {
+    expect(labels(company(["OFICINA"]))).toEqual(["Inicio", "Avisos", "Clientes"]);
+    expect(labels(company(["OFICINA", "TECNICO"]))).toEqual([
+      "Inicio",
+      "Avisos",
+      "Clientes",
+    ]);
   });
 
   it("el técnico solo ve Inicio", () => {
     expect(labels(company(["TECNICO"]))).toEqual(["Inicio"]);
   });
 
-  it("ADMINISTRADOR+TECNICO ve Clientes, Usuarios y Empresa", () => {
+  it("ADMINISTRADOR+TECNICO ve Avisos, Clientes, Usuarios y Empresa", () => {
     expect(labels(company(["ADMINISTRADOR", "TECNICO"]))).toEqual([
       "Inicio",
+      "Avisos",
       "Clientes",
       "Usuarios",
       "Empresa",
@@ -54,7 +60,7 @@ describe("navegación del panel por permisos", () => {
     expect(labels(company([]))).toEqual(["Inicio"]);
   });
 
-  it("el superadmin ve Inicio y Panel de proveedor, pero no Clientes ni Usuarios", () => {
+  it("el superadmin ve Inicio y Panel de proveedor, pero no Avisos, Clientes ni Usuarios", () => {
     expect(labels(SUPERADMIN)).toEqual(["Inicio", "Panel de proveedor"]);
   });
 
@@ -77,5 +83,10 @@ describe("navegación del panel por permisos", () => {
     expect(isNavItemActive(empresa, "/panel/empresa")).toBe(true);
     expect(isNavItemActive(empresa, "/panel/usuarios")).toBe(false);
     expect(isNavItemActive(inicio, "/panel/empresa")).toBe(false);
+    const avisos = item("/panel/avisos");
+    expect(isNavItemActive(avisos, "/panel/avisos")).toBe(true);
+    expect(isNavItemActive(avisos, "/panel/avisos/nuevo")).toBe(true);
+    expect(isNavItemActive(avisos, "/panel/avisos-x")).toBe(false);
+    expect(isNavItemActive(inicio, "/panel/avisos")).toBe(false);
   });
 });

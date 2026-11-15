@@ -93,8 +93,9 @@
   cambiar roles y nadie puede quitarse su propio rol de administrador.
 - **Sin alta de oficina ni técnicos:** ninguna feature del backlog invita o
   crea usuarios de oficina o técnicos desde la interfaz; hoy solo los crea el
-  seed demo. Decidir antes de `office-aviso-creation`/`technician-inbox` si se
-  añade una feature de invitación de equipo o se amplía `user-deactivation`.
+  seed demo. Decidir antes de `technician-inbox` si se añade una feature de
+  invitación de equipo o se amplía `user-deactivation` (`office-aviso-creation`
+  se implementó sin resolverlo: la oficina demo viene del seed).
 - **Petición en vuelo tras perder un rol:** el permiso se comprueba al inicio
   de cada petición; una petición que empezó justo antes de retirar un rol
   puede completarse. El recuento de administradores activos dentro de la
@@ -145,6 +146,28 @@
   `(sede_id, cliente_id)`.
 - **NIF obligatorio para particulares:** el MVP exige NIF a todo cliente
   porque la factura completa lo requiere. Confirmar con la gestoría.
+- **Alta de avisos sin auditoría:** crear un aviso guarda `creado_por_id` y la
+  fecha, pero no deja un registro append-only. Mitigación: queda en
+  `audit-trail-view`.
+- **Sin número de aviso legible:** los avisos se identifican por cliente, sede
+  y fecha (y su UUID en la URL). Si la oficina necesita citarlos por teléfono,
+  añadir un correlativo por empresa en una feature posterior.
+- **La descripción se pierde si el servidor rechaza el envío:** el alta no
+  usa JavaScript; si el servidor devuelve un error (sede, contacto o
+  descripción inválidos), el formulario vuelve vacío salvo el cliente. La
+  validación nativa del navegador (`required`, `maxLength`) evita la mayoría
+  de los casos.
+- **Listado de avisos sin paginación ni filtros:** `/panel/avisos` carga todos
+  los avisos de la empresa. Aceptable para la demo; los filtros por estado,
+  cliente y técnico llegan con el panel de oficina.
+- **Contacto de la sede del aviso validado solo en la aplicación:** los FK
+  compuestos garantizan que cliente, sede y contacto son de la misma empresa y
+  del mismo cliente, pero que el contacto sea de todo el cliente o de la sede
+  elegida lo aplica `src/lib/avisos/avisos.ts` (un FK no puede expresar «nulo
+  o igual»). Mitigación: escribir avisos solo vía el repositorio y `test:db`.
+- **Contactos y sedes con avisos no se pueden borrar:** los FK `Restrict`
+  impiden borrar un cliente, sede o contacto que tenga avisos. Hoy no hay
+  borrado; cuando exista, deberá desactivar en vez de borrar.
 
 ## Research Tasks
 

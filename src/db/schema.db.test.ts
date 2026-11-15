@@ -1065,6 +1065,7 @@ describe("clientes, sedes y contactos", () => {
       "clientes_id_empresa_id_key",
       "clientes_pkey",
       "contactos_cliente_id_idx",
+      "contactos_id_cliente_id_key",
       "contactos_pkey",
       "contactos_sede_id_idx",
       "sedes_cliente_id_idx",
@@ -1195,5 +1196,249 @@ describe("clientes, sedes y contactos", () => {
       });
     });
     expect(valido.telefono).toBeNull();
+  });
+});
+
+describe("avisos", () => {
+  /**
+   * Empresa A con un usuario, dos clientes (cada uno con sede y contacto) y
+   * empresa B con su propio cliente, sede y contacto. Devuelve una fila base
+   * válida para insertar en `avisos` con SQL directo.
+   */
+  async function escenario(tx: Prisma.TransactionClient, suffix: string) {
+    const plan = await tx.plan.create({
+      data: { nombre: `Plan avisos esquema ${suffix}`, importeMensual: "10.00" },
+    });
+    const crearEmpresa = (tag: string) =>
+      tx.empresa.create({
+        data: {
+          nombre: `Empresa ${tag} ${suffix}`,
+          nif: `${tag}${suffix.toUpperCase()}`,
+          emailFacturacion: `facturacion-${tag.toLowerCase()}-${suffix}@example.com`,
+          planId: plan.id,
+        },
+      });
+    const crearCliente = async (empresaId: string, nif: string) => {
+      const cliente = await tx.cliente.create({
+        data: { empresaId, razonSocial: `Cliente ${nif}`, nif, direccionFacturacion: "Dir" },
+      });
+      const sede = await tx.sede.create({
+        data: { empresaId, clienteId: cliente.id, nombre: "Sede", direccion: "Dir" },
+      });
+      const contacto = await tx.contacto.create({
+        data: { empresaId, clienteId: cliente.id, nombre: "Contacto", telefono: "600000000" },
+      });
+      return { cliente, sede, contacto };
+    };
+    const a = await crearEmpresa("VA");
+    const b = await crearEmpresa("VB");
+    const usuario = await tx.usuario.create({
+      data: {
+        empresaId: a.id,
+        email: `avisos-esquema-${suffix}@example.com`,
+        nombre: "Oficina",
+        roles: ["OFICINA"],
+      },
+    });
+    const a1 = await crearCliente(a.id, "B12345678");
+    const a2 = await crearCliente(a.id, "A87654321");
+    const b1 = await crearCliente(b.id, "B12345678");
+
+    return {
+      a,
+      b,
+      usuario,
+      a1,
+      a2,
+      b1,
+      fila: {
+        empresaId: a.id,
+        clienteId: a1.cliente.id,
+        sedeId: a1.sede.id,
+        contactoId: a1.contacto.id,
+        descripcion: "Fuga",
+        prioridad: "NORMAL",
+        origen: "OFICINA",
+      },
+    };
+  }
+
+  type Fila = Awaited<ReturnType<typeof escenario>>["fila"];
+
+  function insertar(tx: Prisma.TransactionClient, fila: Fila, usuarioId: string) {
+    return tx.$executeRaw`
+      INSERT INTO avisos (
+        empresa_id, cliente_id, sede_id, contacto_id, descripcion, prioridad,
+        origen, creado_por_id, actualizado_en
+      ) VALUES (
+        ${fila.empresaId}::uuid, ${fila.clienteId}::uuid, ${fila.sedeId}::uuid,
+        ${fila.contactoId}::uuid, ${fila.descripcion},
+        ${fila.prioridad}::text::prioridad_aviso, ${fila.origen}::text::origen_aviso,
+        ${usuarioId}::uuid, now()
+      )
+    `;
+  }
+
+  it("crea los enums completos y la tabla con sus columnas y defaults", async () => {
+    const enums = await getDb().$queryRaw<Array<{ typname: string; valores: string[] }>>`
+      SELECT t.typname, array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS valores
+      FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typname IN ('prioridad_aviso', 'origen_aviso', 'estado_aviso')
+      GROUP BY t.typname
+      ORDER BY t.typname
+    `;
+    expect(enums).toEqual([
+      {
+        typname: "estado_aviso",
+        valores: ["NUEVO", "PENDIENTE", "ASIGNADO", "EN_CURSO", "RESUELTO", "FACTURADO", "CANCELADO"],
+      },
+      { typname: "origen_aviso", valores: ["OFICINA", "CLIENTE"] },
+      { typname: "prioridad_aviso", valores: ["NORMAL", "ALTA", "URGENTE"] },
+    ]);
+
+    const columnas = await getDb().$queryRaw<
+      Array<{ column_name: string; is_nullable: string; column_default: string | null }>
+    >`
+      SELECT column_name, is_nullable, column_default
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'avisos'
+      ORDER BY ordinal_position
+    `;
+    expect(columnas.map((c) => c.column_name)).toEqual([
+      "id",
+      "empresa_id",
+      "cliente_id",
+      "sede_id",
+      "contacto_id",
+      "descripcion",
+      "prioridad",
+      "origen",
+      "estado",
+      "creado_por_id",
+      "creado_en",
+      "actualizado_en",
+    ]);
+    expect(columnas.every((c) => c.is_nullable === "NO")).toBe(true);
+    const defaults = Object.fromEntries(columnas.map((c) => [c.column_name, c.column_default]));
+    expect(defaults.prioridad).toContain("NORMAL");
+    expect(defaults.estado).toContain("NUEVO");
+    expect(defaults.origen).toBeNull();
+  });
+
+  it("incluye el CHECK, los FK compuestos Restrict y los índices", async () => {
+    const checks = await getDb().$queryRaw<Array<{ conname: string }>>`
+      SELECT conname FROM pg_constraint
+      WHERE conrelid = 'avisos'::regclass AND contype = 'c'
+      ORDER BY conname
+    `;
+    expect(checks.map((row) => row.conname)).toEqual(["avisos_descripcion_no_vacia"]);
+
+    const fks = await getDb().$queryRaw<
+      Array<{ conname: string; confdeltype: string; columnas: number; destino: string }>
+    >`
+      SELECT conname, confdeltype::text AS confdeltype,
+        cardinality(conkey)::int AS columnas, confrelid::regclass::text AS destino
+      FROM pg_constraint
+      WHERE conrelid = 'avisos'::regclass AND contype = 'f'
+      ORDER BY conname
+    `;
+    expect(fks).toEqual([
+      { conname: "avisos_cliente_id_empresa_id_fkey", confdeltype: "r", columnas: 2, destino: "clientes" },
+      { conname: "avisos_contacto_id_cliente_id_fkey", confdeltype: "r", columnas: 2, destino: "contactos" },
+      { conname: "avisos_creado_por_id_fkey", confdeltype: "r", columnas: 1, destino: "usuarios" },
+      { conname: "avisos_empresa_id_fkey", confdeltype: "r", columnas: 1, destino: "empresas" },
+      { conname: "avisos_sede_id_cliente_id_fkey", confdeltype: "r", columnas: 2, destino: "sedes" },
+    ]);
+
+    const indexes = await getDb().$queryRaw<Array<{ indexname: string }>>`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'avisos'
+      ORDER BY indexname
+    `;
+    expect(indexes.map((row) => row.indexname)).toEqual([
+      "avisos_cliente_id_idx",
+      "avisos_contacto_id_idx",
+      "avisos_empresa_id_creado_en_idx",
+      "avisos_pkey",
+      "avisos_sede_id_idx",
+    ]);
+  });
+
+  it("acepta un aviso coherente con estado NUEVO por defecto", async () => {
+    const suffix = uniqueSuffix();
+
+    const estado = await inRollback(async (tx) => {
+      const e = await escenario(tx, suffix);
+      await insertar(tx, e.fila, e.usuario.id);
+      const rows = await tx.$queryRaw<Array<{ estado: string }>>`
+        SELECT estado::text AS estado FROM avisos WHERE empresa_id = ${e.a.id}::uuid
+      `;
+      return rows.map((row) => row.estado);
+    });
+
+    expect(estado).toEqual(["NUEVO"]);
+  });
+
+  it.each([
+    ["un cliente de otra empresa", "clienteB"],
+    ["una sede de otro cliente", "sedeOtroCliente"],
+    ["un contacto de otro cliente", "contactoOtroCliente"],
+    ["una sede de otra empresa", "sedeB"],
+    ["una descripción vacía", "descripcionVacia"],
+    ["una descripción de solo espacios", "descripcionEspacios"],
+    ["una prioridad fuera del enum", "prioridad"],
+    ["un origen fuera del enum", "origen"],
+  ])("rechaza %s", async (_label, caso) => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const e = await escenario(tx, suffix);
+        const casos: Record<string, Partial<Fila>> = {
+          clienteB: {
+            clienteId: e.b1.cliente.id,
+            sedeId: e.b1.sede.id,
+            contactoId: e.b1.contacto.id,
+          },
+          sedeOtroCliente: { sedeId: e.a2.sede.id },
+          contactoOtroCliente: { contactoId: e.a2.contacto.id },
+          sedeB: { sedeId: e.b1.sede.id },
+          descripcionVacia: { descripcion: "" },
+          descripcionEspacios: { descripcion: "   " },
+          prioridad: { prioridad: "BAJA" },
+          origen: { origen: "WEB" },
+        };
+        return insertar(tx, { ...e.fila, ...casos[caso] }, e.usuario.id);
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rechaza un estado fuera del enum", async () => {
+    const suffix = uniqueSuffix();
+
+    await expect(
+      inRollback(async (tx) => {
+        const e = await escenario(tx, suffix);
+        await insertar(tx, e.fila, e.usuario.id);
+        return tx.$executeRaw`
+          UPDATE avisos SET estado = 'BORRADOR' WHERE empresa_id = ${e.a.id}::uuid
+        `;
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("impide borrar un cliente, sede o contacto con avisos (Restrict)", async () => {
+    const suffix = uniqueSuffix();
+
+    for (const tabla of ["contactos", "sedes", "clientes"] as const) {
+      await expect(
+        inRollback(async (tx) => {
+          const e = await escenario(tx, `${suffix}${tabla}`);
+          await insertar(tx, e.fila, e.usuario.id);
+          const ids = { contactos: e.a1.contacto.id, sedes: e.a1.sede.id, clientes: e.a1.cliente.id };
+          return tx.$executeRawUnsafe(`DELETE FROM ${tabla} WHERE id = $1::uuid`, ids[tabla]);
+        }),
+      ).rejects.toThrow();
+    }
   });
 });
