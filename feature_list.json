@@ -327,6 +327,24 @@
     "notes": "Todo aviso de cliente pasa por validación de oficina; ver docs/domain-model.md."
   },
   {
+    "id": "demo-deployment",
+    "area": "operations",
+    "title": "Demo pública para presentar funcionalidades",
+    "user_visible_behavior": "La aplicación está accesible en una URL pública HTTPS (Vercel + Neon, región UE) con datos ficticios de presentación y una franja visible de entorno de demostración; el login limita los intentos fallidos.",
+    "depends_on": [
+      "client-portal-invitation"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Desplegar desde main y abrir la URL pública: /health responde 200 y el login funciona con los usuarios de presentación.",
+      "Comprobar la franja «Entorno de demostración · datos ficticios» en todas las páginas y que la demo tiene datos de presentación (empresa, usuarios por rol, clientes con sedes y contactos, y avisos).",
+      "Superar el límite de intentos fallidos de login y recibir el error de bloqueo temporal sin revelar si el email existe; el login correcto vuelve a funcionar tras la ventana.",
+      "Ejecutar el smoke contra la URL pública y comprobar que las credenciales de la demo no están en el repositorio."
+    ],
+    "evidence": [],
+    "notes": "Alcance mínimo, decidido por el usuario el 2026-11-15: demo para presentar funcionalidades, no producción. Incluye rate limiting del login (CONSTRAINTS.md lo exige antes de exponerlo), franja de demo, migraciones en el despliegue, datos de presentación con contraseñas solo en los secretos de la plataforma y guía de operación. Fuera: dominio propio, email real, copias de seguridad, entornos de preview por PR y monitorización. Las cuentas de Vercel y Neon las crea el usuario."
+  },
+  {
     "id": "aviso-validation-pool",
     "area": "avisos",
     "title": "Validación de avisos y bolsa de pendientes",

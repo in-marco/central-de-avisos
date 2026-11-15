@@ -364,3 +364,11 @@
 - Verification run: 9 migraciones desde base vacía y `test:db` 152/152; `init.sh` sin `DATABASE_URL` (262 tests y build); `validate-smoke.sh` 117/117 con los cinco perfiles; Edge headless con invitación, activación, portal aislado, 403 en avisos para el usuario de cliente, aviso creado por oficina y vista a 390 px.
 - Files or artifacts updated: `feature_list.json` (evidencia), `PROGRESS.md`, `docs/specs/client-portal-invitation.md` y `AGENTS.md` (precisión sobre el enlace flash de 60 s y nota de integración con avisos).
 - Next best step: publicar la PR; tras el merge, `aviso-validation-pool`.
+
+### Session 030
+
+- Date: 2026-11-15
+- Goal: planificar una demo pública para presentar funcionalidades.
+- Completed: por decisión del usuario se añade `demo-deployment` a `feature_list.json`, antes de `aviso-validation-pool`. Es una demo simple con datos ficticios, no producción: Vercel + Neon en región UE, rate limiting del login (lo exige `CONSTRAINTS.md` antes de exponerlo), franja de entorno de demostración, migraciones en el despliegue, datos de presentación con contraseñas solo en los secretos de la plataforma y guía de operación. Quedan fuera dominio propio, email real, copias de seguridad, previews por PR y monitorización.
+- Verification run: `feature_list.json` válido, sin dependencias rotas.
+- Next best step: spec e implementación de `demo-deployment`; el usuario crea las cuentas de Vercel y Neon.
